@@ -274,6 +274,24 @@ fi
 SPUR_ROOT=$(dirname "$SPUR_FILE")
 cd "$SPUR_ROOT" || die 66 "cannot enter $SPUR_ROOT"
 
+# ------------------------------------------------------------------ assembly
+
+PRELUDE='set -e
+spur() { "$SPUR_BIN" "$@"; }'
+
+script=
+
+# build_script TASK -- leaves the assembled script in the global "script".
+build_script() {
+  run_parser body "$1" || parser_error $?
+  body=$PARSER_OUT
+  run_parser preamble "" || parser_error $?
+  preamble=$PARSER_OUT
+
+  script=$(printf '%s\n%s\n' "$PRELUDE" "$preamble")
+  script=$(printf '%s\n%s\n' "$script" "$body")
+}
+
 # ----------------------------------------------------------------- listing
 
 if [ -n "$list_opt" ] || [ -z "$task" ]; then
@@ -281,6 +299,15 @@ if [ -n "$list_opt" ] || [ -z "$task" ]; then
     die 64 "no task given"
   fi
   list_tasks
+  exit 0
+fi
+
+# ---------------------------------------------------------------- execution
+
+build_script "$task"
+
+if [ -n "$dry_opt" ]; then
+  printf '%s\n' "$script"
   exit 0
 fi
 
