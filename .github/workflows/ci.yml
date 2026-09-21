@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  lint:
+    name: shellcheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install shellcheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+      - name: Lint
+        run: shellcheck -s sh spur tests/run.sh tests/lib.sh tests/cases/*.sh
+
+  shells:
+    name: tests (${{ matrix.shell }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shell: [sh, dash, bash]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install shells
+        run: sudo apt-get update && sudo apt-get install -y dash
+      - name: Run the test suite
+        run: SPUR_TEST_SHELL=${{ matrix.shell }} sh tests/run.sh
+
+  busybox:
+    name: tests (busybox ash)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run the test suite inside Alpine
+        run: |
+          docker run --rm -v "$PWD:/work" -w /work alpine:3.20 \
+            sh -c "apk add --no-cache diffutils >/dev/null && sh tests/run.sh"

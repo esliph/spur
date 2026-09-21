@@ -90,6 +90,7 @@ find_spurfile() {
 #   body      the dedented body of the task named by "want"
 # Diagnostics go to stdout; the exit status carries the meaning (65 syntax,
 # 67 unknown task), because /dev/stderr is not portable across awks.
+# shellcheck disable=SC2016  # awk source, deliberately not expanded by sh
 AWK_PARSER='
 function err(msg) { printf "%s:%d: %s\n", file, NR, msg; failed = 1; exit 65 }
 function ws(s) { match(s, /^[ \t]*/); return substr(s, 1, RLENGTH) }
@@ -276,6 +277,7 @@ cd "$SPUR_ROOT" || die 66 "cannot enter $SPUR_ROOT"
 
 # ------------------------------------------------------------------ assembly
 
+# shellcheck disable=SC2016  # the prelude is literal text for the task shell
 PRELUDE='set -e
 spur() { "$SPUR_BIN" "$@"; }'
 

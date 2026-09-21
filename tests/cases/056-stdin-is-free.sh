@@ -1,3 +1,6 @@
+# $runner and $shell_under_test come from tests/run.sh; $status is read by
+# assert_status in tests/lib.sh.
+# shellcheck disable=SC2154,SC2034
 spurfile <<'EOF'
 read-line:
   read line

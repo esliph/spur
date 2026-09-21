@@ -2,6 +2,7 @@
 #
 # Sourced by tests/run.sh inside each case's own temporary directory. The
 # variables $runner and $shell_under_test come from the harness.
+# shellcheck disable=SC2154  # $runner and $shell_under_test come from tests/run.sh
 
 fail() {
   printf 'assertion failed: %s\n' "$*"

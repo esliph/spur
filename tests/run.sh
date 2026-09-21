@@ -21,6 +21,7 @@ failed=0
 # case, so start from a clean slate.
 unset SPUR_BIN SPUR_ROOT SPUR_INVOCATION_DIR SPUR_TASK SPUR_STACK
 
+# shellcheck disable=SC2329  # invoked through the EXIT and INT traps
 cleanup() { rm -rf "$workdir"; }
 trap cleanup EXIT
 trap 'cleanup; exit 130' INT
@@ -41,6 +42,7 @@ for case_file in "$root"/tests/cases/*.sh; do
   if (
     cd "$casedir" || exit 1
     . "$root/tests/lib.sh"
+    # shellcheck source=/dev/null
     . "$case_file"
   ) >"$workdir/$name.log" 2>&1; then
     passed=$((passed + 1))
