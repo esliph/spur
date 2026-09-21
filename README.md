@@ -15,7 +15,7 @@ pattern rules.
 ## Install
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/esliph/spur/main/spur \
+curl -fsSL https://raw.githubusercontent.com/esliph/spur/master/spur \
   -o ~/.local/bin/spur && chmod +x ~/.local/bin/spur
 ```
 
