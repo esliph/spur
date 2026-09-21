@@ -1,0 +1,21 @@
+# Spurfile for spur itself. If these tasks are uncomfortable to write, the
+# design is wrong and we find out in the first week.
+HARNESS=tests/run.sh
+SOURCES="spur tests/run.sh tests/lib.sh"
+
+test: ## run the behavior tests
+  sh "$HARNESS" "$@"
+
+test-all: ## run the tests under every POSIX shell available locally
+  for candidate in sh dash bash; do
+    command -v "$candidate" >/dev/null 2>&1 || continue
+    printf '== %s\n' "$candidate"
+    SPUR_TEST_SHELL=$candidate sh "$HARNESS" "$@"
+  done
+
+lint: ## run shellcheck over the runner and the test suite
+  shellcheck -s sh $SOURCES tests/cases/*.sh
+
+check: ## lint and test
+  spur lint
+  spur test
