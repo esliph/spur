@@ -1,325 +1,330 @@
 # Spur — Simple Portable Universal Runner
 
-**Data:** 2026-09-21
-**Status:** Design aprovado, pronto para plano de implementação
-**Organização:** [Esliph](https://github.com/esliph)
+**Date:** 2026-09-21
+**Status:** Design approved, ready for the implementation plan
+**Organization:** [Esliph](https://github.com/esliph)
 
-## Resumo
+## Summary
 
-`spur` é um task runner escrito em POSIX sh estrito. Ele lê um arquivo `Spurfile`,
-lista tarefas e executa cada uma num único shell, com passthrough de argumentos.
+`spur` is a task runner written in strict POSIX sh. It reads a `Spurfile`, lists
+the tasks, and runs each one in a single shell, with argument passthrough.
 
-O diferencial é a ausência de runtime: não há binário a compilar, nem Go, Rust ou
-Node a instalar. O programa é um script shell que roda em qualquer Unix — incluindo
-containers Alpine mínimos, onde `just` e Task exigem binário e o `make` nem sempre
-está presente.
+What sets it apart is the absence of a runtime: there is no binary to compile, and
+no Go, Rust or Node to install. The program is a shell script that runs on any
+Unix — including minimal Alpine containers, where `just` and Task need a binary
+and `make` is not always present.
 
-O escopo é deliberadamente menor que o do `make`: **Spur é um executor de tarefas,
-não um sistema de build.** Não há grafo de dependências, não há rebuild incremental
-por timestamp, não há regras de padrão.
+The scope is deliberately smaller than make's: **Spur is a task executor, not a
+build system.** There is no dependency graph, no incremental rebuild by timestamp,
+no pattern rules.
 
-## Decisões fundamentais
+## Fundamental decisions
 
-| Decisão | Escolha |
+| Decision | Choice |
 |---|---|
-| Forma de distribuição | Script instalado no PATH (ou copiado para dentro do repositório) |
-| Dialeto | POSIX sh estrito — dash, ash, busybox, bash, zsh, ksh |
-| Modelo de execução | Sem dependências entre tarefas; chamada explícita `spur outra` |
-| Formato do Spurfile | Sintaxe make-like com parser próprio |
-| Entrada do usuário | Passthrough posicional via `"$@"` |
-| Estado compartilhado | Preâmbulo shell no topo do arquivo |
-| Motor | `awk` extrai o bloco, `sh -c` executa |
+| Distribution | A script installed on the PATH (or copied into the repository) |
+| Dialect | Strict POSIX sh — dash, ash, busybox, bash, zsh, ksh |
+| Execution model | No dependencies between tasks; explicit `spur other` calls |
+| Spurfile format | make-like syntax with its own parser |
+| User input | Positional passthrough via `"$@"` |
+| Shared state | A shell preamble at the top of the file |
+| Engine | `awk` extracts the block, `sh -c` runs it |
 
-## 1. O que entra e o que sai do Make
+## 1. What comes in from make and what stays out
 
-### Entra do Make
+### In from make
 
-| Recurso | Forma no Spur |
+| Feature | Form in Spur |
 |---|---|
-| Regra nomeada + receita | `nome: ## descrição` seguido de bloco indentado |
-| `make <alvo>` | `spur <tarefa>` |
-| Auto-doc por comentário `##` | Promovida de convenção a recurso: alimenta o `--list` |
-| `make -n` | `spur -n` imprime o script montado em vez de executar |
-| `make -f` | `spur -f outro.Spurfile` |
-| `make -C dir` | `spur -C dir tarefa` |
+| Named rule + recipe | `name: ## description` followed by an indented block |
+| `make <target>` | `spur <task>` |
+| `##` comment auto-doc | Promoted from a convention to a feature: it feeds `--list` |
+| `make -n` | `spur -n` prints the assembled script instead of running it |
+| `make -f` | `spur -f other.Spurfile` |
+| `make -C dir` | `spur -C dir task` |
 
-### Entra, que o Make não tem
+### In, which make does not have
 
-| Recurso | Motivo |
+| Feature | Reason |
 |---|---|
-| Passthrough `"$@"` | `spur test -k foo -vv`. Impossível no make. |
-| Preâmbulo shell | Substitui variáveis, condicionais e `include` com um mecanismo só |
-| Busca ascendente do Spurfile | `spur test` funciona de qualquer subpasta, como o `git` |
-| `set -e` no bloco | Restaura o abort-on-error que o make dava via shell-por-linha |
-| Guarda de recursão | Impede que chamadas encadeadas virem fork bomb |
-| Função `spur` injetada | Chamadas encadeadas funcionam mesmo com o runner fora do PATH |
+| `"$@"` passthrough | `spur test -k foo -vv`. Impossible in make. |
+| Shell preamble | Replaces variables, conditionals and `include` with a single mechanism |
+| Upward search for the Spurfile | `spur test` works from any subfolder, like `git` |
+| `set -e` in the block | Restores the abort-on-error that make gave through shell-per-line |
+| Recursion guard | Keeps chained calls from turning into a fork bomb |
+| Injected `spur` function | Chained calls work even when the runner is outside the PATH |
 
-### Sai — o motor de build
+### Out — the build engine
 
-| Recurso | Razão |
+| Feature | Reason |
 |---|---|
-| Pré-requisitos (`alvo: deps`) | Trocados por chamada explícita, para que o passthrough de argumentos permaneça simétrico e visível |
-| Rebuild incremental por timestamp | `stat` diverge entre GNU/BSD/busybox; `-nt` não é POSIX. O recurso mais caro e o menos usado em Makefile-como-task-runner |
-| Execução paralela (`-j`) | Sem grafo, não há o que paralelizar com segurança |
-| Regras de padrão (`%.o: %.c`) | Dependem de alvos-arquivo, que não existem |
-| Regras implícitas embutidas | Spur não sabe compilar nada, e é isso que o torna previsível |
-| Variáveis automáticas (`$@`, `$<`, `$^`) | Não há pré-requisitos a referenciar. Libera `$@` com a semântica shell (os argumentos) |
-| `include`, condicionais (`ifeq`) | O preâmbulo tem `.` e `if` de verdade |
-| Recursão via `$(MAKE)` | `spur -C sub build` é mais claro |
+| Prerequisites (`target: deps`) | Replaced by an explicit call, so that argument passthrough stays symmetric and visible |
+| Incremental rebuild by timestamp | `stat` differs across GNU/BSD/busybox; `-nt` is not POSIX. The costliest feature, and the least used in a Makefile-as-task-runner |
+| Parallel execution (`-j`) | Without a graph there is nothing to parallelize safely |
+| Pattern rules (`%.o: %.c`) | They depend on file targets, which do not exist |
+| Built-in implicit rules | Spur does not know how to compile anything, and that is what makes it predictable |
+| Automatic variables (`$@`, `$<`, `$^`) | There are no prerequisites to reference. Frees `$@` for its shell meaning (the arguments) |
+| `include`, conditionals (`ifeq`) | The preamble has a real `.` and a real `if` |
+| Recursion via `$(MAKE)` | `spur -C sub build` is clearer |
 
-### Sai — as pegadinhas
+### Out — the gotchas
 
-| Pegadinha | Substituto |
+| Gotcha | Replacement |
 |---|---|
-| TAB obrigatório | Indentação por espaços; TAB aceito, nunca exigido |
-| Um shell novo por linha de receita | Bloco inteiro num só `sh`: `cd` e variáveis persistem |
-| `$$` para escapar `$` | O runner não expande nada; `$` chega intacto ao shell |
-| `.PHONY` | Toda tarefa é phony por construção — o conceito deixa de existir |
-| `@` por linha (silenciar) | Não implementável (ver Limitações). Eco é desligado por padrão; `-x` liga |
-| `-` por linha (ignorar erro) | `\|\| true` |
-| Eco de comandos por padrão | Desligado. `spur -x` liga `set -x` com `PS4` enxuto |
+| Mandatory TAB | Indentation with spaces; TAB accepted, never required |
+| A new shell per recipe line | The whole block in a single `sh`: `cd` and variables persist |
+| `$$` to escape `$` | The runner expands nothing; `$` reaches the shell intact |
+| `.PHONY` | Every task is phony by construction — the concept ceases to exist |
+| `@` per line (silence) | Not implementable (see Limitations). Echo is off by default; `-x` turns it on |
+| `-` per line (ignore errors) | `\|\| true` |
+| Command echo by default | Off. `spur -x` turns on `set -x` with a lean `PS4` |
 
-## 2. A linguagem do Spurfile
+## 2. The Spurfile language
 
 ```sh
-# Tudo antes da primeira tarefa é preâmbulo: shell puro,
-# injetado no topo de toda tarefa executada.
+# Everything before the first task is the preamble: plain shell,
+# injected at the top of every task that runs.
 IMAGE=myapp:latest
 : "${ENV:=dev}"
 [ -f .env ] && . ./.env
 
 _log() { printf '>> %s\n' "$1"; }
 
-build: ## constrói a imagem
+build: ## build the image
   _log "building $IMAGE"
   docker build -t "$IMAGE" .
 
-test: ## roda os testes
+test: ## run the tests
   spur build
   pytest -q "$@"
 
-db-reset: ## recria o banco (destrutivo)
+db-reset: ## recreate the database (destructive)
   dropdb --if-exists app && createdb app
 ```
 
-### Gramática
+### Grammar
 
-1. Uma linha que casa `^[A-Za-z0-9_.-]+:` abre uma tarefa. O corpo vai até a próxima
-   linha não-indentada e não-vazia.
-2. `## texto` no cabeçalho é a descrição, usada pelo `--list`. Sem `##`, a tarefa
-   existe e é executável, apenas aparece sem descrição.
-3. O corpo é indentado. Espaços são a forma canônica; TAB é aceito e tratado como
-   indentação, nunca exigido.
-4. **Dedent:** antes de executar, o runner remove de todas as linhas do corpo a menor
-   indentação comum entre elas (linhas vazias não contam para o cálculo). Isso preserva
-   a indentação relativa de `if`, `for` e heredocs.
-5. **Linhas vazias dentro do corpo pertencem ao corpo** e não o encerram. Só uma linha
-   com conteúdo na coluna zero fecha a tarefa.
-6. Tudo antes da primeira tarefa é preâmbulo.
-7. Uma linha não-indentada que não casa o padrão de tarefa e aparece **depois** da
-   primeira tarefa é erro de sintaxe (código 65). Antes da primeira tarefa, é preâmbulo.
+1. A line matching `^[A-Za-z0-9_.-]+:` opens a task. The body runs until the next
+   line that is neither indented nor empty.
+2. `## text` in the header is the description, used by `--list`. Without `##`, the
+   task exists and is runnable; it just appears without a description.
+3. The body is indented. Spaces are the canonical form; TAB is accepted and treated
+   as indentation, never required.
+4. **Dedent:** before running, the runner removes from every line of the body the
+   smallest indentation common to them (empty lines do not count toward the
+   calculation). This preserves the relative indentation of `if`, `for` and heredocs.
+5. **Empty lines inside the body belong to the body** and do not end it. Only a line
+   with content at column zero closes the task.
+6. Everything before the first task is the preamble.
+7. A non-indented line that does not match the task pattern and appears **after**
+   the first task is a syntax error (code 65). Before the first task, it is preamble.
 
-### Propriedades
+### Properties
 
-- **Nome de tarefa aceita `-` e `.`** (`db-reset`, `docker.build`), porque tarefas
-  não são funções shell — o corpo é extraído como texto.
-- **Nenhuma expansão pelo runner.** O corpo vai literal para o `sh`: `$IMAGE`,
-  `$(date)`, `${x:-y}`, `$$` (PID) têm semântica shell padrão.
-- **Tarefa sem `##` continua executável.** Documentação não é requisito sintático.
+- **Task names accept `-` and `.`** (`db-reset`, `docker.build`), because tasks are
+  not shell functions — the body is extracted as text.
+- **No expansion by the runner.** The body goes to `sh` verbatim: `$IMAGE`,
+  `$(date)`, `${x:-y}`, `$$` (PID) have standard shell semantics.
+- **A task without `##` is still runnable.** Documentation is not a syntactic
+  requirement.
 
-## 3. Modelo de execução
+## 3. Execution model
 
-### Pipeline de `spur test -k foo`
+### Pipeline for `spur test -k foo`
 
 ```
-1. Parse dos argumentos      -> flags do runner, nome da tarefa, resto = "$@"
-2. Localiza o Spurfile       -> -f, ou -C dir, ou busca ascendente
-3. cd na raiz do Spurfile    -> cwd determinístico
-4. Guarda de recursão        -> SPUR_STACK contém "test"? aborta
-5. awk extrai                -> preâmbulo + corpo da tarefa
-6. Monta o script            -> prelúdio do runner + preâmbulo + corpo
+1. Parse the arguments      -> runner flags, task name, rest = "$@"
+2. Locate the Spurfile      -> -f, or -C dir, or upward search
+3. cd to the Spurfile root  -> deterministic cwd
+4. Recursion guard          -> does SPUR_STACK contain "test"? abort
+5. awk extracts             -> preamble + task body
+6. Assemble the script      -> runner prelude + preamble + body
 7. sh -c "$script" "spur test" -k foo
-8. Propaga o exit code
+8. Propagate the exit code
 ```
 
-### O script montado
+### The assembled script
 
 ```sh
-set -e                                  # prelúdio do runner
-spur() { "$SPUR_BIN" "$@"; }            # prelúdio do runner
-IMAGE=myapp:latest                      # preâmbulo do usuário
-_log() { printf '>> %s\n' "$1"; }       # preâmbulo do usuário
-pytest -q "$@"                          # corpo da tarefa
+set -e                                  # runner prelude
+spur() { "$SPUR_BIN" "$@"; }            # runner prelude
+IMAGE=myapp:latest                      # user preamble
+_log() { printf '>> %s\n' "$1"; }       # user preamble
+pytest -q "$@"                          # task body
 ```
 
-A forma `sh -c 'código' nome arg1 arg2` define `$0=nome` e `$1=arg1` nativamente,
-conforme POSIX. Consequências, todas verificadas:
+The form `sh -c 'code' name arg1 arg2` sets `$0=name` and `$1=arg1` natively, as
+POSIX specifies. The consequences, all verified:
 
-- **stdin permanece livre** — `spur psql`, `spur shell` e `docker run -it` funcionam.
-  Um pipe (`echo "$body" | sh -s`) sequestraria o stdin e quebraria toda tarefa
-  interativa.
-- **Sem arquivo temporário** — nada de `mktemp` (que não é POSIX), nem `trap` de
-  limpeza, nem resíduo em Ctrl-C, nem modo de falha em `/tmp` cheio ou somente-leitura.
-- **Isolamento** — `exit 1` na tarefa não mata o runner; `set -e` na tarefa não
-  contamina o runner.
-- **`$0` vira etiqueta de erro** — o shell reporta `spur build: line 3: ...`.
+- **stdin stays free** — `spur psql`, `spur shell` and `docker run -it` work. A pipe
+  (`echo "$body" | sh -s`) would hijack stdin and break every interactive task.
+- **No temporary file** — no `mktemp` (which is not POSIX), no cleanup `trap`, no
+  residue on Ctrl-C, no failure mode on a full or read-only `/tmp`.
+- **Isolation** — `exit 1` in the task does not kill the runner; `set -e` in the task
+  does not contaminate the runner.
+- **`$0` becomes an error label** — the shell reports `spur build: line 3: ...`.
 
-### Opções de shell
+### Shell options
 
-`set -e` ligado, `set -u` desligado, `pipefail` inexistente em POSIX.
+`set -e` on, `set -u` off, and `pipefail` does not exist in POSIX.
 
-`set -e` restaura o que o make dava de graça: com um shell por linha, um comando
-falho abortava a receita; com o bloco inteiro num shell, precisamos reativar.
+`set -e` restores what make gave for free: with one shell per line, a failing
+command aborted the recipe; with the whole block in one shell, we have to turn it
+back on.
 
-`set -u` é opinativo demais para impor — transformaria `$1` ausente em erro cru, em
-vez de deixar a tarefa escrever `${1:?informe o ambiente}`. Quem quiser, põe no
-preâmbulo.
+`set -u` is too opinionated to impose — it would turn a missing `$1` into a raw
+error, instead of letting the task write `${1:?specify the environment}`. Whoever
+wants it puts it in the preamble.
 
-### Códigos de saída
+### Exit codes
 
-A tarefa propaga o próprio código **intacto** — CI depende disso. Erros do runner
-usam a faixa 64+ (convenção `sysexits`), para nunca colidir com o código de uma tarefa.
+The task propagates its own code **intact** — CI depends on it. Runner errors use
+the 64+ range (the `sysexits` convention), so they never collide with a task's code.
 
-| Código | Significado |
+| Code | Meaning |
 |---|---|
-| *(o da tarefa)* | Propagado sem alteração |
-| 64 | Uso incorreto (flag inválida, tarefa não informada) |
-| 65 | Spurfile malformado |
-| 66 | Spurfile não encontrado |
-| 67 | Tarefa desconhecida |
-| 68 | Recursão detectada |
+| *(the task's)* | Propagated unchanged |
+| 64 | Incorrect usage (invalid flag, no task given) |
+| 65 | Malformed Spurfile |
+| 66 | Spurfile not found |
+| 67 | Unknown task |
+| 68 | Recursion detected |
 
-### Ambiente exportado
+### Exported environment
 
-| Variável | Conteúdo |
+| Variable | Contents |
 |---|---|
-| `SPUR_BIN` | Caminho absoluto do runner; é o que faz a função `spur` injetada funcionar fora do PATH |
-| `SPUR_ROOT` | Raiz do Spurfile (= cwd da tarefa) |
-| `SPUR_INVOCATION_DIR` | Pasta de onde o usuário chamou |
-| `SPUR_TASK` | Nome da tarefa em execução |
-| `SPUR_STACK` | Pilha de chamadas, para a guarda de recursão |
+| `SPUR_BIN` | Absolute path of the runner; this is what makes the injected `spur` function work outside the PATH |
+| `SPUR_ROOT` | The Spurfile's root (= the task's cwd) |
+| `SPUR_INVOCATION_DIR` | The folder the user called from |
+| `SPUR_TASK` | Name of the running task |
+| `SPUR_STACK` | The call stack, for the recursion guard |
 
-### Diretório de trabalho
+### Working directory
 
-Toda tarefa roda no **diretório que contém o Spurfile em uso**, independentemente de
-onde foi invocada. `SPUR_INVOCATION_DIR` preserva a pasta original para quem precisar dela.
+Every task runs in the **directory that holds the Spurfile in use**, regardless of
+where it was invoked from. `SPUR_INVOCATION_DIR` preserves the original folder for
+whoever needs it.
 
-Sem isso, `spur test` daria resultados diferentes conforme a pasta de onde foi
-chamado, e a busca ascendente viraria armadilha em vez de conveniência.
+Without this, `spur test` would give different results depending on the folder it
+was called from, and the upward search would become a trap instead of a convenience.
 
-A regra vale para todas as formas de localizar o arquivo, e `-C` é aplicado antes de tudo:
+The rule holds for every way of locating the file, and `-C` is applied before
+anything else:
 
-| Invocação | `SPUR_ROOT` (= cwd da tarefa) |
+| Invocation | `SPUR_ROOT` (= the task's cwd) |
 |---|---|
-| `spur test` (busca ascendente) | Diretório onde o Spurfile foi encontrado |
-| `spur -f ../outro/Spurfile test` | `../outro/` — a pasta do arquivo apontado |
-| `spur -C api test` | `api/`, ou o ancestral de `api/` onde o Spurfile for encontrado |
-| `spur -C api -f custom.spur test` | `api/`, onde `custom.spur` é resolvido |
+| `spur test` (upward search) | The directory where the Spurfile was found |
+| `spur -f ../other/Spurfile test` | `../other/` — the folder of the file pointed at |
+| `spur -C api test` | `api/`, or the ancestor of `api/` where the Spurfile is found |
+| `spur -C api -f custom.spur test` | `api/`, where `custom.spur` is resolved |
 
-### Guarda de recursão
+### Recursion guard
 
-Tarefas chamam tarefas por subprocesso (`spur deps` dentro de um corpo), então a
-detecção de ciclo precisa atravessar processos. `SPUR_STACK` é exportada e acumula
-a cadeia; ao entrar numa tarefa, o runner testa se o nome já está na pilha:
+Tasks call tasks through subprocesses (`spur deps` inside a body), so cycle
+detection has to cross process boundaries. `SPUR_STACK` is exported and accumulates
+the chain; on entering a task, the runner tests whether the name is already on the
+stack:
 
 ```sh
 case " ${SPUR_STACK:-} " in
-  *" $task "*) die 68 "recursão detectada: ${SPUR_STACK# } -> $task" ;;
+  *" $task "*) die 68 "recursion detected: ${SPUR_STACK# } -> $task" ;;
 esac
 ```
 
-Detecta apenas **ancestrais**. Uma tarefa chamada duas vezes em sequência (não
-aninhada) é permitida, que é o comportamento correto.
+It detects only **ancestors**. A task called twice in sequence (not nested) is
+allowed, which is the correct behavior.
 
-## 4. A CLI
+## 4. The CLI
 
 ```
-spur [flags do runner] <tarefa> [argumentos da tarefa...]
+spur [runner flags] <task> [task arguments...]
 ```
 
-### Regra de corte das flags
+### The flag cut-off rule
 
-**A primeira palavra que não começa com `-` é o nome da tarefa. Tudo depois dela
-pertence à tarefa, intocado.**
+**The first word that does not start with `-` is the task name. Everything after it
+belongs to the task, untouched.**
 
 ```sh
-spur -n test          # -n é do runner (dry run de 'test')
-spur test -n          # -n é da tarefa, chega como "$1"
-spur -C api test -k x # -C api do runner; -k x da tarefa
+spur -n test          # -n is the runner's (dry run of 'test')
+spur test -n          # -n is the task's, arrives as "$1"
+spur -C api test -k x # -C api is the runner's; -k x is the task's
 ```
 
-Sem essa regra, cada flag nova que o Spur ganhasse roubaria um nome do espaço de
-flags das tarefas. Como o runner nunca olha nada depois do nome da tarefa, o conjunto
-de flags pode crescer sem quebrar Spurfile nenhum.
+Without this rule, every new flag Spur gained would steal a name from the tasks'
+flag space. Since the runner never looks at anything after the task name, the set
+of flags can grow without breaking any Spurfile.
 
 ### Flags
 
-| Flag | Efeito |
+| Flag | Effect |
 |---|---|
-| `-f ARQUIVO` | Usa outro Spurfile (desliga a busca ascendente) |
-| `-C DIR` | `cd DIR` antes de tudo |
-| `-l`, `--list` | Lista as tarefas e sai |
-| `-n` | Imprime o script montado em vez de executar |
-| `-x` | Liga `set -x` após o preâmbulo, com `PS4='$ '` |
-| `-h`, `--help` | Ajuda |
-| `-V`, `--version` | Versão |
+| `-f FILE` | Use another Spurfile (turns off the upward search) |
+| `-C DIR` | `cd DIR` before anything else |
+| `-l`, `--list` | List the tasks and exit |
+| `-n` | Print the assembled script instead of running it |
+| `-x` | Turn on `set -x` after the preamble, with `PS4='$ '` |
+| `-h`, `--help` | Help |
+| `-V`, `--version` | Version |
 
-`PS4` é fixado em `'$ '` para que o eco saia como `$ docker build -t app .`, em vez do
-`+ ` padrão do shell. A linha `set -x` é inserida **depois** do preâmbulo, de modo que
-atribuições de variável e definições de função não poluam a saída.
+`PS4` is fixed at `'$ '` so that the echo comes out as `$ docker build -t app .`,
+instead of the shell's default `+ `. The `set -x` line is inserted **after** the
+preamble, so that variable assignments and function definitions do not pollute the
+output.
 
-**Precedência:** `-n` vence `-x`. Com ambas as flags, o script é impresso (já contendo
-a linha `set -x`) e nada é executado.
+**Precedence:** `-n` beats `-x`. With both flags, the script is printed (already
+containing the `set -x` line) and nothing is run.
 
-Sem agrupamento de flags curtas (`-xn`): o parsing é um `while`/`case` de vinte
-linhas e o ganho não paga a complexidade.
+There is no grouping of short flags (`-xn`): the parsing is a twenty-line
+`while`/`case`, and the gain does not pay for the complexity.
 
-### Descoberta do Spurfile
+### Spurfile discovery
 
-Procura `Spurfile`, depois `spurfile`, no diretório atual; não achando, sobe um nível
-e repete, até `/`.
+It looks for `Spurfile`, then `spurfile`, in the current directory; if it finds
+neither, it goes up one level and repeats, up to `/`.
 
-As duas grafias existem porque macOS e Windows têm sistemas de arquivo
-*case-insensitive*, onde `Spurfile` e `spurfile` são o mesmo arquivo, enquanto Linux
-distingue. A busca subindo até `/` pode, num diretório sem projeto, alcançar um
-Spurfile no `$HOME` — é o mesmo risco que `git` e `just` aceitam, e o `--list` e as
-mensagens de erro sempre mostram o caminho resolvido, o que torna a surpresa
-diagnosticável.
+Both spellings exist because macOS and Windows have *case-insensitive* filesystems,
+where `Spurfile` and `spurfile` are the same file, while Linux tells them apart. The
+search going up to `/` may, from a directory with no project, reach a Spurfile in
+`$HOME` — the same risk `git` and `just` accept, and `--list` and the error
+messages always show the resolved path, which makes the surprise diagnosable.
 
-### Saída do `--list`
+### The `--list` output
 
 ```
 $ spur --list
-Spurfile: /home/dan/projeto/Spurfile
+Spurfile: /home/dan/project/Spurfile
 
-  build      constrói a imagem
-  test       roda os testes
-  db-reset   recria o banco (destrutivo)
+  build      build the image
+  test       run the tests
+  db-reset   recreate the database (destructive)
   deploy
 ```
 
-Tarefas na **ordem do arquivo**, não alfabética: a ordem em que foram escritas carrega
-intenção (fluxo principal primeiro, utilitários depois).
+Tasks in **file order**, not alphabetical: the order in which they were written
+carries intent (main flow first, utilities after).
 
-`spur` sem argumento nenhum faz exatamente isto — divergência deliberada do make,
-que rodaria o primeiro alvo.
+`spur` with no argument at all does exactly this — a deliberate divergence from
+make, which would run the first target.
 
-## 5. Arquitetura, testes e distribuição
+## 5. Architecture, tests and distribution
 
-### Arquivo único
+### Single file
 
-O `spur` é **um** script, com o `awk` embutido como string. A alternativa —
-`spur` + `resolve.awk` lado a lado — obrigaria o runner a descobrir onde seu próprio
-`.awk` mora, atravessando symlinks, `$0` relativo e instalação em `/usr/local/bin`.
+`spur` is **one** script, with the `awk` embedded as a string. The alternative —
+`spur` + `resolve.awk` side by side — would force the runner to find out where its
+own `.awk` lives, across symlinks, a relative `$0` and an install in
+`/usr/local/bin`.
 
-Estimativa: 200-300 linhas, organizadas em funções (`parse_args`, `find_spurfile`,
-`extract_task`, `list_tasks`, `run_task`, `die`). Sem build step: o arquivo no
-repositório é o arquivo que se instala.
+Estimate: 200-300 lines, organized into functions (`parse_args`, `find_spurfile`,
+`extract_task`, `list_tasks`, `run_task`, `die`). No build step: the file in the
+repository is the file that gets installed.
 
 ```
 spur/
-├── spur            # o runner
-├── Spurfile        # dogfooding: o projeto se usa
+├── spur            # the runner
+├── Spurfile        # dogfooding: the project uses itself
 ├── tests/
 │   ├── run.sh      # harness
 │   └── cases/
@@ -327,117 +332,121 @@ spur/
 └── README.md
 ```
 
-O repositório local hoje se chama `task-runner`, nome provisório de antes da escolha
-da marca. Renomeá-lo para `spur` (e publicá-lo como `esliph/spur`) é parte do plano
-de implementação.
+The local repository is currently called `task-runner`, a provisional name from
+before the brand was chosen. Renaming it to `spur` (and publishing it as
+`esliph/spur`) is part of the implementation plan.
 
-O `Spurfile` na raiz não é enfeite: se `spur lint` e `spur test` do próprio projeto
-forem desconfortáveis de escrever, o design está errado e isso aparece na primeira semana.
+The `Spurfile` at the root is not decoration: if the project's own `spur lint` and
+`spur test` are uncomfortable to write, the design is wrong and that shows up in
+the first week.
 
-### Testes
+### Tests
 
-**Testes de comportamento.** Harness em sh puro: cada caso monta um Spurfile
-temporário, invoca o `spur` e compara stdout, stderr e exit code. Escolhido em vez de
-`bats` (exige bash) ou `shellspec` (uma dependência a instalar) porque a ferramenta se
-vende como zero-dependência, e exigir um framework para rodar os testes contradiria
-isso na primeira linha do CONTRIBUTING. Custo aceito: sem diffs bonitos e sem
-`--filter` de fábrica. Estimativa do harness: ~60 linhas.
+**Behavior tests.** A plain-sh harness: each case builds a temporary Spurfile,
+invokes `spur` and compares stdout, stderr and the exit code. Chosen over `bats`
+(requires bash) or `shellspec` (one more dependency to install) because the tool
+sells itself as zero-dependency, and requiring a framework to run its tests would
+contradict that on the first line of CONTRIBUTING. Accepted cost: no pretty diffs
+and no `--filter` out of the box. Harness estimate: ~60 lines.
 
-**Matriz de shells.** É o que transforma "POSIX estrito" de promessa em fato verificado:
+**Shell matrix.** This is what turns "strict POSIX" from a promise into a verified fact:
 
-| Shell | Papel |
+| Shell | Role |
 |---|---|
-| `dash` | O mais restrito. Se passa aqui, é POSIX de verdade |
-| `bash` | O que a maioria usa no dia a dia |
-| `busybox ash` | Alpine e containers mínimos, via Docker no CI |
-| Git Bash | O ambiente de desenvolvimento do autor |
+| `dash` | The strictest. If it passes here, it is truly POSIX |
+| `bash` | The one most people use day to day |
+| `busybox ash` | Alpine and minimal containers, via Docker in CI |
+| Git Bash | The author's development environment |
 
-`dash` e `bash` já estão disponíveis no ambiente de desenvolvimento, o que permite
-rodar a checagem de portabilidade localmente, e não apenas no CI.
+`dash` and `bash` are already available in the development environment, which lets
+the portability check run locally, not only in CI.
 
-**`shellcheck -s sh`** no CI, como terceira camada: pega bashismo estaticamente, antes
-de virar bug de runtime num Alpine em produção.
+**`shellcheck -s sh`** in CI, as a third layer: it catches bashisms statically,
+before they become a runtime bug on an Alpine in production.
 
 ### Windows
 
-**O `spur` exige um shell POSIX. No Windows isso significa Git Bash, MSYS2, WSL ou
-Cygwin. Não haverá versão nativa para cmd ou PowerShell.**
+**`spur` requires a POSIX shell. On Windows that means Git Bash, MSYS2, WSL or
+Cygwin. There will be no native version for cmd or PowerShell.**
 
-Esse é exatamente o requisito do `make`, então não é regressão — mas o README precisa
-ser preciso sobre o que promete. "Portabilidade" aqui significa *roda em qualquer
-Unix, sob qualquer shell POSIX, sem instalar runtime nenhum*. Não significa *roda
-nativamente em todo lugar*. `just` e Task, compilados, cobrem Windows nativo melhor;
-o Spur ganha onde eles perdem — dentro de um container Alpine, numa máquina sem
-toolchain, num servidor onde não se pode instalar binários.
+That is exactly `make`'s requirement, so it is not a regression — but the README
+has to be precise about what it promises. "Portability" here means *runs on any
+Unix, under any POSIX shell, with no runtime to install*. It does not mean *runs
+natively everywhere*. `just` and Task, being compiled, cover native Windows better;
+Spur wins where they lose — inside an Alpine container, on a machine with no
+toolchain, on a server where binaries cannot be installed.
 
-### Instalação
+### Installation
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/esliph/spur/main/spur \
   -o ~/.local/bin/spur && chmod +x ~/.local/bin/spur
 ```
 
-E o modo *vendored*: copiar o `spur` para dentro do repositório e commitá-lo. Quem
-clonar roda `./spur test` sem instalar nada, e a função `spur` injetada faz as
-chamadas encadeadas funcionarem nesse modo também. Empacotamento (brew, apt) fica
-fora do v1.
+And the *vendored* mode: copy `spur` into the repository and commit it. Whoever
+clones runs `./spur test` without installing anything, and the injected `spur`
+function makes chained calls work in this mode too. Packaging (brew, apt) is out of
+scope for v1.
 
-## Limitações conhecidas
+## Known limitations
 
-Registradas aqui deliberadamente, como consequências assumidas do design:
+Recorded here deliberately, as accepted consequences of the design:
 
-1. **Tarefas podem executar mais de uma vez.** Sem grafo, não há dedup: se `build`
-   chama `deps` e `lint` também chama `deps`, `deps` roda duas vezes. É o preço da
-   chamada explícita, e o ganho é que o passthrough de argumentos permanece simétrico
-   e visível no corpo da tarefa.
+1. **Tasks can run more than once.** With no graph there is no dedup: if `build`
+   calls `deps` and `lint` also calls `deps`, `deps` runs twice. That is the price
+   of the explicit call, and the gain is that argument passthrough stays symmetric
+   and visible in the task body.
 
-2. **`-n` não expande a cadeia de chamadas.** Mostra o script montado da tarefa pedida
-   e apenas dela. `spur deps` dentro do corpo só acontece em tempo de execução, e
-   descobrir isso estaticamente exigiria interpretar o shell. O `make -n` faz melhor,
-   porque conhece o grafo antes de rodar. Decidido não incluir heurística (grep por
-   linhas que começam com `spur `): um dry-run que acerta 80% das vezes é pior que um
-   que declara seu escopo com honestidade.
+2. **`-n` does not expand the call chain.** It shows the assembled script of the
+   requested task and only that. `spur deps` inside the body only happens at run
+   time, and discovering it statically would require interpreting the shell.
+   `make -n` does better, because it knows the graph before running. It was decided
+   not to include a heuristic (grep for lines that start with `spur `): a dry run
+   that is right 80% of the time is worse than one that honestly declares its scope.
 
-3. **O `@` por linha do make não é implementável.** O make consegue porque dispara uma
-   linha por vez; o Spur entrega o bloco inteiro a um `sh` e não sabe onde cada comando
-   começa e termina — há `if`, `for`, pipes e continuação de linha. Implementar isso
-   exigiria parsear shell dentro de awk. Os substitutos são `spur -x` (invocação
-   inteira) e `{ set +x; } 2>/dev/null` … `set -x` (trecho do bloco). O redirecionamento
-   é necessário porque um `set +x` cru ecoa a si mesmo antes de desligar.
+3. **make's per-line `@` is not implementable.** make can do it because it fires one
+   line at a time; Spur hands the whole block to one `sh` and does not know where
+   each command starts and ends — there are `if`, `for`, pipes and line
+   continuations. Implementing it would require parsing shell inside awk. The
+   substitutes are `spur -x` (the whole invocation) and `{ set +x; } 2>/dev/null`
+   … `set -x` (a stretch of the block). The redirection is needed because a bare
+   `set +x` echoes itself before turning off.
 
-4. **O preâmbulo roda a cada tarefa.** Irrelevante se for barato (atribuições, `.env`,
-   funções); custoso se alguém puser trabalho pesado ali. Vale documentar no README.
+4. **The preamble runs for every task.** Irrelevant if it is cheap (assignments,
+   `.env`, functions); costly if someone puts heavy work there. Worth documenting in
+   the README.
 
-5. **Sem Windows nativo.** Ver a seção Windows.
+5. **No native Windows.** See the Windows section.
 
-## Fora do escopo do v1
+## Out of scope for v1
 
-- Tarefas privadas por prefixo `_` (omitidas do `--list`). Sem pré-requisitos, quase
-  todo helper natural vira função no preâmbulo; o caso que sobra é o helper que precisa
-  rodar em subprocesso isolado. Adicionar se a dor aparecer.
-- Empacotamento em brew, apt ou similares.
-- Agrupamento de flags curtas (`-xn`).
-- Execução paralela, timestamps, regras de padrão — fora do escopo do produto, não
-  apenas do v1.
+- Private tasks by `_` prefix (omitted from `--list`). Without prerequisites, almost
+  every natural helper becomes a function in the preamble; the remaining case is the
+  helper that needs to run in an isolated subprocess. Add it if the pain shows up.
+- Packaging in brew, apt or similar.
+- Grouping of short flags (`-xn`).
+- Parallel execution, timestamps, pattern rules — outside the scope of the product,
+  not just of v1.
 
-## Validações já realizadas
+## Validations already performed
 
-As seguintes primitivas foram testadas durante o design, em Git Bash com `dash` e
-`bash` disponíveis:
+The following primitives were tested during the design, in Git Bash with `dash` and
+`bash` available:
 
-- `sh -c 'código' nome arg1 arg2` define `$0` e os posicionais conforme POSIX.
-- `PS4` customizado com `set -x` ativado após o preâmbulo produz eco legível, com
-  valores **já expandidos** (`echo 'building myapp:latest'`, não `$IMAGE`).
-- `set +x` cru ecoa a si mesmo; `{ set +x; } 2>/dev/null` resolve.
-- `set -e` dentro de `sh -c` aborta e propaga o código corretamente.
-- stdin permanece livre sob `sh -c`, permitindo tarefas interativas.
-- A guarda de recursão via variável de ambiente atravessa processos e detecta
-  `a -> b -> a`, retornando código próprio.
-- A função `spur` injetada faz chamadas encadeadas funcionarem com o runner chamado
-  por caminho relativo, de outro diretório, fora do PATH.
-- Argumentos são repassados corretamente em chamadas encadeadas
-  (`spur lint --fix` dentro de um corpo).
+- `sh -c 'code' name arg1 arg2` sets `$0` and the positionals as POSIX specifies.
+- A custom `PS4` with `set -x` turned on after the preamble produces a readable
+  echo, with values **already expanded** (`echo 'building myapp:latest'`, not
+  `$IMAGE`).
+- A bare `set +x` echoes itself; `{ set +x; } 2>/dev/null` solves it.
+- `set -e` inside `sh -c` aborts and propagates the code correctly.
+- stdin stays free under `sh -c`, allowing interactive tasks.
+- The recursion guard via an environment variable crosses processes and detects
+  `a -> b -> a`, returning its own code.
+- The injected `spur` function makes chained calls work with the runner invoked by
+  a relative path, from another directory, outside the PATH.
+- Arguments are passed through correctly in chained calls
+  (`spur lint --fix` inside a body).
 
-## Próximo passo
+## Next step
 
-Plano de implementação via skill `superpowers:writing-plans`, com TDD.
+Implementation plan via the `superpowers:writing-plans` skill, with TDD.
