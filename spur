@@ -304,6 +304,19 @@ fi
 
 # ---------------------------------------------------------------- execution
 
+SPUR_TASK=$task
+
+case " ${SPUR_STACK:-} " in
+  *" $task "*)
+    chain=
+    # shellcheck disable=SC2086
+    for frame in ${SPUR_STACK:-}; do
+      chain=${chain:+$chain -> }$frame
+    done
+    die 68 "recursion detected: ${chain:+$chain -> }$task"
+    ;;
+esac
+
 build_script "$task"
 
 if [ -n "$dry_opt" ]; then
@@ -311,7 +324,7 @@ if [ -n "$dry_opt" ]; then
   exit 0
 fi
 
-SPUR_TASK=$task
-export SPUR_BIN SPUR_ROOT SPUR_INVOCATION_DIR SPUR_TASK
+SPUR_STACK=${SPUR_STACK:+$SPUR_STACK }$task
+export SPUR_BIN SPUR_ROOT SPUR_INVOCATION_DIR SPUR_TASK SPUR_STACK
 
 exec sh -c "$script" "spur $task" "$@"
