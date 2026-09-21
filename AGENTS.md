@@ -12,7 +12,7 @@ runs one task per invocation in a single shell.
 Scope boundary (enforced by design, not an oversight): **spur runs tasks, it
 does not build software.** No dependency graph, no timestamp rebuilds, no
 pattern rules. Requests that add a task graph or incremental builds contradict
-the design in `docs/superpowers/specs/2026-09-21-spur-task-runner-design.md`.
+the design of the tool.
 
 ## Commands
 
@@ -126,6 +126,3 @@ script.
 `README.md` is the user-facing contract (language, CLI, exit codes, the
 make→spur mapping, and the six known limitations). Behavior changes usually
 need it updated in the same commit. `CONTRIBUTING.md` holds the testing rules.
-`docs/superpowers/` records the design rationale: the make research, the
-approved design spec, and the implementation plan — read the spec before
-proposing anything that changes the execution model.
