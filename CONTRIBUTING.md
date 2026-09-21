@@ -4,8 +4,12 @@
 
 ```sh
 sh tests/run.sh          # or: ./spur test
-sh tests/run.sh list     # only cases whose name contains "list"
+sh tests/run.sh discovery-flag-f   # one case, by its exact name
+sh tests/run.sh parse-            # no case has that name: every case containing "parse-" (a group)
 ```
+
+A name that matches no case exits with status 64 instead of reporting a green
+empty run.
 
 The harness has no dependencies: each case gets its own temporary directory
 under `/tmp` (override with `SPUR_TEST_TMPDIR`), writes a `Spurfile`, runs the
@@ -27,7 +31,10 @@ CI adds busybox ash (Alpine, via Docker) and `shellcheck -s sh`.
 
 ## Writing a case
 
-Create `tests/cases/NNN-what-it-checks.sh`. The file runs with its cwd set to
+Create `tests/cases/group-what-it-checks.sh`, where `group-` is the theme prefix
+of its neighbours (`cli-`, `discovery-`, `parse-`, `assembly-`, `exec-`, `chain-`,
+`trace-`, `harness-`); its name, without `.sh`, is the case
+name you pass to `sh tests/run.sh`, so keep it unique. The file runs with its cwd set to
 a private directory, with these helpers in scope:
 
 | Helper | Purpose |
