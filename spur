@@ -82,6 +82,122 @@ find_spurfile() {
   done
 }
 
+# ------------------------------------------------------------------- parsing
+
+# The Spurfile parser. Modes:
+#   list      one formatted line per task
+#   preamble  every line before the first task header
+#   body      the dedented body of the task named by "want"
+# Diagnostics go to stdout; the exit status carries the meaning (65 syntax,
+# 67 unknown task), because /dev/stderr is not portable across awks.
+AWK_PARSER='
+function err(msg) { printf "%s:%d: %s\n", file, NR, msg; failed = 1; exit 65 }
+function ws(s) { match(s, /^[ \t]*/); return substr(s, 1, RLENGTH) }
+function cprefix(a, b,   i, n) {
+  n = length(a); if (length(b) < n) n = length(b)
+  for (i = 1; i <= n; i++) if (substr(a, i, 1) != substr(b, i, 1)) return substr(a, 1, i - 1)
+  return substr(a, 1, n)
+}
+BEGIN { started = 0; in_body = 0; capturing = 0; found = 0; nb = 0; npre = 0; nt = 0; maxlen = 0 }
+{
+  line = $0
+  sub(/\r$/, "", line)
+  if (line ~ /^[ \t]*$/) {
+    if (in_body) { if (capturing) body[++nb] = line }
+    else if (!started) pre[++npre] = line
+    next
+  }
+  if (line ~ /^[ \t]/) {
+    if (in_body) { if (capturing) body[++nb] = line; next }
+    if (!started) { pre[++npre] = line; next }
+    err("indented line does not belong to any task")
+  }
+  if (line ~ /^#/) { in_body = 0; capturing = 0; if (!started) pre[++npre] = line; next }
+  if (line ~ /^[A-Za-z0-9_.-]+:/) {
+    colon = index(line, ":")
+    name = substr(line, 1, colon - 1)
+    rest = substr(line, colon + 1)
+    h = index(rest, "##")
+    if (h > 0) { lead = substr(rest, 1, h - 1); desc = substr(rest, h + 2) }
+    else { lead = rest; desc = "" }
+    if (lead ~ /[^ \t]/) err("task header takes no prerequisites: " name)
+    sub(/^[ \t]+/, "", desc); sub(/[ \t]+$/, "", desc)
+    if (name in seen) err("duplicate task: " name)
+    seen[name] = 1
+    tname[++nt] = name; tdesc[nt] = desc
+    if (length(name) > maxlen) maxlen = length(name)
+    started = 1; in_body = 1
+    capturing = (mode == "body" && name == want)
+    if (capturing) found = 1
+    next
+  }
+  if (!started) { pre[++npre] = line; next }
+  err("syntax error: expected a task header")
+}
+END {
+  if (failed) exit 65
+  if (mode == "list") {
+    fmt = "  %-" (maxlen + 3) "s%s\n"
+    for (i = 1; i <= nt; i++) {
+      if (tdesc[i] == "") printf "  %s\n", tname[i]
+      else printf fmt, tname[i], tdesc[i]
+    }
+    exit 0
+  }
+  if (mode == "preamble") {
+    for (i = 1; i <= npre; i++) print pre[i]
+    exit 0
+  }
+  if (mode == "body") {
+    if (!found) { printf "unknown task: %s\n", want; exit 67 }
+    while (nb > 0 && body[nb] ~ /^[ \t]*$/) nb--
+    pfx = ""; first = 1
+    for (i = 1; i <= nb; i++) {
+      if (body[i] ~ /^[ \t]*$/) continue
+      if (first) { pfx = ws(body[i]); first = 0 }
+      else pfx = cprefix(pfx, ws(body[i]))
+    }
+    n = length(pfx)
+    for (i = 1; i <= nb; i++) {
+      if (body[i] ~ /^[ \t]*$/) print ""
+      else print substr(body[i], n + 1)
+    }
+    exit 0
+  }
+}
+'
+
+PARSER_OUT=
+
+# run_parser MODE WANT -- leaves the parser output in PARSER_OUT and returns
+# the parser exit status. Must stay a function, never a command substitution,
+# so that the caller can exit on failure.
+run_parser() {
+  PARSER_OUT=$(
+    awk -v mode="$1" -v want="$2" -v file="$(basename "$SPUR_FILE")" \
+      "$AWK_PARSER" "$SPUR_FILE"
+  )
+}
+
+# parser_error STATUS -- report PARSER_OUT and exit.
+parser_error() {
+  printf 'spur: %s\n' "$PARSER_OUT" >&2
+  if [ "$1" -eq 67 ]; then
+    printf "spur: run 'spur --list' to see the available tasks\n" >&2
+  fi
+  exit "$1"
+}
+
+list_tasks() {
+  run_parser list "" || parser_error $?
+  printf 'Spurfile: %s\n\n' "$SPUR_FILE"
+  if [ -n "$PARSER_OUT" ]; then
+    printf '%s\n' "$PARSER_OUT"
+  else
+    printf '  (no tasks defined)\n'
+  fi
+}
+
 # ----------------------------------------------------------- argument parsing
 
 spurfile_opt=
@@ -158,5 +274,14 @@ fi
 SPUR_ROOT=$(dirname "$SPUR_FILE")
 cd "$SPUR_ROOT" || die 66 "cannot enter $SPUR_ROOT"
 
-printf 'Spurfile: %s\n\n' "$SPUR_FILE"
+# ----------------------------------------------------------------- listing
+
+if [ -n "$list_opt" ] || [ -z "$task" ]; then
+  if [ -z "$task" ] && { [ -n "$dry_opt" ] || [ -n "$trace_opt" ]; }; then
+    die 64 "no task given"
+  fi
+  list_tasks
+  exit 0
+fi
+
 exit 0
