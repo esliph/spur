@@ -16,6 +16,11 @@ workdir=${SPUR_TEST_TMPDIR:-/tmp}/spur-tests.$$
 passed=0
 failed=0
 
+# The runner exports its own state to child processes. When the suite is
+# started through spur itself (./spur test), that state would leak into every
+# case, so start from a clean slate.
+unset SPUR_BIN SPUR_ROOT SPUR_INVOCATION_DIR SPUR_TASK SPUR_STACK
+
 cleanup() { rm -rf "$workdir"; }
 trap cleanup EXIT
 trap 'cleanup; exit 130' INT
