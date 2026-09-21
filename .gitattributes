@@ -1,0 +1,3 @@
+# The runner and its tests are shell scripts: CRLF would break the shebang
+# and every heredoc, so force LF on every platform.
+* text=auto eol=lf
