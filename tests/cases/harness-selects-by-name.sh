@@ -1,6 +1,8 @@
 # The harness itself: a case is selected by its exact name, then by substring.
 # Only cases that never start the harness again may be selected here.
-# shellcheck disable=SC2154  # $root and $shell_under_test come from tests/run.sh
+# $root and $shell_under_test come from tests/run.sh; $status is read by
+# assert_status in tests/lib.sh.
+# shellcheck disable=SC2154,SC2034
 harness() {
   "$shell_under_test" "$root/tests/run.sh" "$@" >stdout 2>stderr
   status=$?

@@ -25,7 +25,7 @@ failed=0
 # case, so start from a clean slate.
 unset SPUR_BIN SPUR_ROOT SPUR_INVOCATION_DIR SPUR_TASK SPUR_STACK
 
-# shellcheck disable=SC2329  # invoked through the EXIT and INT traps
+# shellcheck disable=SC2317,SC2329  # invoked through the EXIT and INT traps
 cleanup() { rm -rf "$workdir"; }
 trap cleanup EXIT
 trap 'cleanup; exit 130' INT
