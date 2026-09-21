@@ -66,7 +66,10 @@ $ spur test -k login -vv
 - The body is indented. Spaces are canonical; a tab is accepted and never
   required.
 - Before running, the runner removes the longest common indentation from the
-  body, so `if`, `for` and heredocs keep their relative shape.
+  body, so `if`, `for` and heredocs keep their relative shape. Indent a
+  heredoc terminator with the rest of the body; the dedent puts it back at
+  column zero, where the shell looks for it. Left at column zero in the
+  Spurfile it ends the task instead, and the file fails to parse.
 - Blank lines inside a body belong to the body. Only a line with content at
   column zero ends it.
 - Everything before the first task is the preamble.
