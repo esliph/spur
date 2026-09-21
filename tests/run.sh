@@ -2,7 +2,11 @@
 # Behavior tests for spur.
 #
 # Usage:
-#   sh tests/run.sh [name-filter]
+#   sh tests/run.sh [name]
+#
+# With a name, the case of exactly that name runs alone; when there is none,
+# the name is a substring filter over the case names. Selecting nothing is a
+# usage error (exit 64).
 #
 # Environment:
 #   SPUR_TEST_SHELL     shell used to run the runner under test (default: sh)
@@ -31,12 +35,21 @@ mkdir -p "$workdir" || {
   exit 70
 }
 
+exact=
+if [ -n "$filter" ] && [ -f "$root/tests/cases/$filter.sh" ]; then
+  exact=1
+fi
+
 for case_file in "$root"/tests/cases/*.sh; do
   name=$(basename "$case_file" .sh)
-  case $name in
-    *"$filter"*) ;;
-    *) continue ;;
-  esac
+  if [ -n "$exact" ]; then
+    [ "$name" = "$filter" ] || continue
+  else
+    case $name in
+      *"$filter"*) ;;
+      *) continue ;;
+    esac
+  fi
   casedir=$workdir/$name
   mkdir -p "$casedir"
   if (
@@ -53,6 +66,11 @@ for case_file in "$root"/tests/cases/*.sh; do
     sed 's/^/     /' "$workdir/$name.log"
   fi
 done
+
+if [ $((passed + failed)) -eq 0 ]; then
+  printf 'no test matches: %s\n' "$filter" >&2
+  exit 64
+fi
 
 printf '\n%s passed, %s failed (shell: %s)\n' "$passed" "$failed" "$shell_under_test"
 if [ "$failed" -eq 0 ]; then
