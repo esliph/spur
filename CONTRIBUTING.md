@@ -56,4 +56,7 @@ a private directory, with these helpers in scope:
 - The runner depends on `sh` and `awk` only. No `mktemp`, no `stat`, no
   temporary files.
 - Everything in this repository is written in English.
+- Commits follow Conventional Commits, in English like the rest: a type and an
+  optional scope, as in `feat(parser):` or `test:`. `git log` is the
+  reference for the types already in use.
 - Every behavior change comes with a test.

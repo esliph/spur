@@ -9,7 +9,11 @@ against 48 cases. Cases get added; re-verify before acting on anything here.
 ls tests/cases/                              # the live list; the file name is the case name
 grep -rl "<behavior>" tests/cases/           # is this already pinned?
 sh tests/run.sh <group>-                     # run a whole group
+ls tests/cases/ | sed 's/-.*//' | sort | uniq -c   # the counts below, recomputed
 ```
+
+Run that last line before quoting a count from this file. The numbers are the
+part that rots first, and a wrong one here reads like coverage that exists.
 
 To find an unreached branch in the runner, read the diagnostic strings in
 `spur` (`err(...)` inside `AWK_PARSER`, and every `die`) and grep the cases for
@@ -22,7 +26,7 @@ each message. A message no case asserts is a branch no case reaches.
 `-x -n` (short flags deliberately do not group); `-f` and `-C` without an
 argument are 64.
 
-**`discovery-`** (7) — Spurfile found in `$PWD` and by ascending search;
+**`discovery-`** (8) — Spurfile found in `$PWD` and by ascending search;
 lowercase `spurfile` accepted, with the case tolerating case-insensitive
 filesystems; nothing found is 66; `-C dir` works and a missing dir is 64;
 `-f file` works and a missing file is 66 (not 64 — the codes are distinct on
@@ -44,7 +48,7 @@ trailing ones (trimmed), and for a body containing a heredoc whose terminator
 is indented with it; the runner expands nothing; unknown task is 67 and
 suggests `spur --list`; `-n` or `-x` with no task is 64.
 
-**`exec-`** (9) — a task runs and prints; the exit code is propagated
+**`exec-`** (10) — a task runs and prints; the exit code is propagated
 unchanged (42 stays 42) and never confused with a runner code; `set -e` aborts
 the body; arguments after the task name pass through untouched, quoting
 preserved; `SPUR_TASK`, `SPUR_ROOT`, `SPUR_INVOCATION_DIR`, `SPUR_BIN` are
@@ -151,11 +155,9 @@ lines of awk, this is cheaper and catches more than another shell would.
 
 ## Not worth testing
 
-Scope is fixed by design, not by omission: spur runs tasks, it does not build
-software. No dependency graph, no timestamp rebuilds, no pattern rules. A case
-for any of those is a redesign wearing a test's clothes. The same goes for the
-README's known limitations — a task running twice, `-n` not expanding the call
-chain, no per-line `@`, the preamble running for every task, no native
-Windows, and chained calls not inheriting `-f` are decisions, and cases that
-pin them as *current behavior* are fine, while cases that assert the opposite
-are a feature request.
+Scope is fixed by design, not by omission, and the repository is where it is
+fixed — a case for anything on that list is a redesign wearing a test's
+clothes, so it never appears here as a gap. The README's known limitations work
+the same way: each is a decision, so a case that pins one as *current
+behavior* is fine and a case that asserts the opposite is a feature request
+with an assertion attached.

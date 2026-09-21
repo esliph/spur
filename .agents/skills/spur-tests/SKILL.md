@@ -10,6 +10,33 @@ only thing standing between a tidy-looking refactor and a silent change in how
 somebody's `Spurfile` behaves. Treat a case as a pinned promise, not as
 scaffolding.
 
+## Boundary
+
+**Territory** — decides whether a change to the runner is adequately pinned,
+and by which assertion; names and groups each case; arbitrates whether a
+proposed case is worth adding or vacuous; approves what "done" means for a
+behavior change, including which shells were actually run.
+
+**Outside the boundary** — the runner's design and its user-facing contract
+(the language, the CLI, the exit codes, the known limitations): pinned here,
+decided and documented elsewhere in this repository. Also outside: whether a
+behavior should exist at all, and how this repository is committed and
+released.
+
+**What I don't need to know** — the Spurfile of whatever project uses spur,
+how spur is installed or packaged, and why the runner was designed the way it
+was. A case pins observable behavior; it does not ratify the reasoning behind
+it, so none of that changes which assertion is right.
+
+**Edge contract** — receives a change to the runner, a failure log, or a
+question about coverage; returns cases under `tests/cases/`, a verdict on a
+proposal, or an honest stop naming what it could not verify.
+
+**Hard dependency** — the harness contract in `tests/run.sh` and
+`tests/lib.sh` (the helpers, `$runner` and `$shell_under_test`, and
+exact-name-then-substring selection), and the coverage snapshot in
+`references/coverage-map.md`.
+
 ## The pieces
 
 | Path | What it is |
@@ -17,19 +44,20 @@ scaffolding.
 | `tests/run.sh` | The harness: picks cases, runs each in its own temp dir, prints `ok` / `FAIL`. |
 | `tests/lib.sh` | Assertion helpers, sourced into every case. |
 | `tests/cases/<group>-<what>.sh` | One case each. Plain sh, no framework. |
-| `Spurfile` | `test`, `test-all`, `lint`, `check` — the repo runs itself. |
-| `.github/workflows/ci.yml` | shellcheck + `sh`/`dash`/`bash` + busybox ash on Alpine. |
+| `Spurfile` | The repo runs itself; the tasks that drive the suite are listed there. |
+| `.github/workflows/ci.yml` | What CI actually runs — the authority on the matrix. |
 
 There is no test framework and there should not be one: a tool that sells
 itself as zero-dependency cannot need `bats` or `shellspec` to test itself.
 That constraint is why the harness is hand-rolled, and why new cases are
 written in the same sh the runner is written in.
 
-**Two different dependency budgets.** The *runner* (`spur`) may use `sh` and
-`awk` only — no `mktemp`, no `stat`, no temp files. The *harness* is ordinary
-tooling and freely uses `grep`, `sed`, `diff`, `basename`, `mkdir`, `rm`.
-Don't over-apply the runner's diet to `tests/`; `assert_stdout_is` is built on
-`diff -u` on purpose.
+**Two different dependency budgets.** The repository states the diet the
+*runner* is on, and it is a strict one. What it does not say, and what gets
+over-applied, is that the *harness* is exempt: `tests/` is ordinary tooling
+and freely uses `grep`, `sed`, `diff`, `basename`, `mkdir`, `rm`.
+`assert_stdout_is` is built on `diff -u` on purpose. A case rewritten to obey
+the runner's diet is a case made worse for no reason.
 
 ## Running
 
@@ -39,11 +67,11 @@ sh tests/run.sh discovery-flag-f       # exactly that case
 sh tests/run.sh parse-                 # no case has that name: substring filter (a group)
 sh tests/run.sh nonsense               # selects nothing -> exit 64, never a green empty run
 SPUR_TEST_SHELL=dash sh tests/run.sh   # the strict-POSIX check
-./spur test          # same thing through the Spurfile; ./spur test cli- forwards the filter
-./spur test-all      # every shell found locally
-./spur lint          # shellcheck -s sh over runner + harness + all cases
-./spur check         # lint then test
 ```
+
+The repository also drives all of this through itself, filter included. Read
+the task list in the `Spurfile` rather than recalling a task name from
+memory — it is one file and it is the only place that spelling is true.
 
 Selection resolves exact-name-first: if `tests/cases/<arg>.sh` exists, only
 that case runs, even when other case names contain the argument. Otherwise the
@@ -68,9 +96,9 @@ happily accepts bashisms. A green `sh tests/run.sh` there proves very little.
 CI adds busybox ash for the same reason. Before claiming a change is done, run
 dash at minimum, and say which shells you actually ran.
 
-`shellcheck` is not installed everywhere. If `./spur lint` reports
-"command not found", say so plainly rather than treating the missing lint as a
-pass — CI will still run it.
+`shellcheck` is not installed everywhere. If the repository's lint task
+reports "command not found", say so plainly rather than treating the missing
+lint as a pass — CI will still run it.
 
 ## Reading a failure
 
@@ -98,18 +126,12 @@ usually the fastest way to see what the assembly stage actually produced.
 ## Writing a case
 
 The file name without `.sh` **is** the case name, so it must be unique and it
-is what someone will type to run it. Name it `<group>-<what-it-checks>.sh`:
-
-| Group | Covers |
-|---|---|
-| `cli-` | flags, help, version, usage errors |
-| `discovery-` | finding the Spurfile, `-f`, `-C` |
-| `parse-` | the awk parser and `--list` |
-| `assembly-` | the generated script, dedent, `-n` |
-| `exec-` | actually running a task |
-| `chain-` | `spur` called from inside a body |
-| `trace-` | `-x` |
-| `harness-` | the harness itself |
+is what someone will type to run it. Name it `<group>-<what-it-checks>.sh`,
+where `<group>` is the prefix its neighbours already use: `ls tests/cases/` is
+the live list and `CONTRIBUTING.md` says what each prefix covers. Inventing a
+new prefix is a real decision, not a formality — make it only when a case
+honestly fits none of the existing ones, and say that you did, because the
+prefix is the whole reason `sh tests/run.sh <group>-` is worth typing.
 
 Cases run in alphabetical order, each in its own directory, each in a
 subshell. Order carries no meaning and no case may depend on another.
@@ -146,18 +168,13 @@ assertion mysteriously fails on a literal `$PWD`, this is why.
 
 ### Helpers
 
-| Helper | Purpose |
-|---|---|
-| `spurfile` | heredoc on stdin → `./Spurfile` |
-| `run ARGS...` | runs the runner; fills the files `stdout`, `stderr` and the variable `$status` |
-| `assert_status N` | exit status |
-| `assert_stdout_is` | byte-exact diff against a heredoc |
-| `assert_stdout_has` / `assert_stderr_has` | fixed-string contains |
-| `assert_stdout_lacks` / `assert_stderr_lacks` | fixed-string absence |
-| `assert_stdout_matches` / `assert_stderr_matches` | extended regex |
-| `fail MESSAGE` | abort with a diagnostic, dumping stdout and stderr |
+`tests/lib.sh` is the set of helpers a case gets, and the authority on what
+each one does; `CONTRIBUTING.md` lists them in short form. Read one of the two
+instead of recalling the set from memory — an assertion that does not exist
+fails as a missing command, which reads like a bug in the case.
 
-Choosing well matters more than it looks:
+Choosing between them is the part no list can tell you, and it matters more
+than it looks:
 
 - Assertions about **assembly** should use `run -n <task>` plus
   `assert_stdout_is`. That pins the generated script byte for byte, including
@@ -168,10 +185,11 @@ Choosing well matters more than it looks:
 - Reach for `assert_*_matches` only when shells legitimately disagree.
   `trace-flag.sh` is the model: dash and bash quote a traced word differently,
   so the case accepts both spellings rather than pinning one shell's output.
-- **Always** assert the status, even when you also assert output. Exit codes
-  are a documented contract (64 usage, 65 malformed, 66 not found,
-  67 unknown task, 68 recursion, task codes passed through unchanged) and a
-  case that only checks text lets a code regress silently.
+- **Always** assert the status, even when you also assert output. Every exit
+  code is a documented promise — `README.md` has the table, and which code
+  belongs to which failure is decided there, not here — and a case that only
+  checks text lets a code regress silently. Look the expected code up; two of
+  them are deliberately close together and guessing gets it wrong.
 
 ### When a case needs to bypass `run`
 
@@ -202,27 +220,31 @@ Every behavior change ships with a test, and the order matters:
 2. Make the change in `spur`.
 3. `sh tests/run.sh <the-new-case>` until it is green, then the whole suite.
 4. `SPUR_TEST_SHELL=dash sh tests/run.sh` — the real POSIX check.
-5. `./spur lint` if shellcheck is available.
-6. Update `README.md` in the same commit when the user-facing contract moved.
-   The README is the contract: the language, the CLI, the exit codes, the
-   make→spur mapping and the known limitations. `AGENTS.md` too if the change
-   touches how the runner is structured, and `CONTRIBUTING.md` if it changes
-   how tests are written.
+5. The repository's lint task, if shellcheck is available — and say so when it
+   is not.
+6. Say out loud whether the change moved the user-facing contract, and hand
+   that on. The repository names which document carries which promise and
+   requires it to move in the same commit; a case pins behavior, it does not
+   get to decide what was promised. Silence here is how a contract and its
+   documentation drift apart.
 
-Commits are Conventional Commits, in English, like the rest of the repository.
+What the suite exists to defend is not decided here. The repository states the
+runner's invariants — `AGENTS.md` for how the stages are built, `README.md`
+for the half of it users were promised — and the suite's job is to hold them
+still. Each already has a case standing on it, and these are the ones to run
+first after a refactor that "changes nothing":
 
-What the suite exists to defend, and what a change must not quietly break:
+| Invariant | Standing on it |
+|---|---|
+| the runner expands nothing | `assembly-no-expansion-by-runner` |
+| dedent keeps a nested block's shape | `assembly-dedent`, `assembly-heredoc-in-body` |
+| one `sh -c`: stdin free, errors labelled `spur <task>` | `exec-stdin-is-free`, `exec-error-label` |
+| flags stop at the first non-`-` word, and do not group | `exec-argument-passthrough`, `cli-unknown-option` |
+| recursion refused, repeated calls allowed | `chain-recursion-detected`, `chain-repeated-call-allowed` |
 
-- **The runner expands nothing.** `$VAR`, `$(cmd)`, `$$` must reach the task
-  shell byte for byte (`assembly-no-expansion-by-runner`).
-- **Dedent** strips the longest common leading-whitespace *prefix*, so nested
-  blocks keep their shape.
-- **One `sh -c`** is why stdin stays free, why there is no temp file, and why
-  errors are labelled `spur <task>: line N`.
-- **Flags stop at the first non-`-` word**; everything after the task name
-  belongs to the task.
-- **Recursion** is refused (68) but repeated calls are allowed — there is no
-  dependency graph and that is deliberate.
+When a change breaks one of these and the documents still promise it, the case
+is right and the change is wrong. That one is not a judgement call to defer:
+the promise is on paper, and the case is how it stays true.
 
 ## Proposing improvements
 
@@ -251,10 +273,11 @@ Ideas to turn down:
 - Anything that adds a dependency or a framework to `tests/`.
 - A case that depends on another case, on execution order, or on files outside
   its own directory.
-- Coverage for features spur deliberately does not have. Its scope is fixed:
-  **spur runs tasks, it does not build software** — no dependency graph, no
-  timestamp rebuilds, no pattern rules. A "test" for a task graph is a
-  redesign in disguise.
+- Coverage for features spur deliberately does not have. The repository fixes
+  that scope and lists what falls outside it (`AGENTS.md`, and `README.md` for
+  the known limitations). A "test" for something on that list is a redesign in
+  disguise, not a coverage gap — turn it down as a scope question, and leave
+  the scope itself to the documents that set it.
 - Pinning shell-specific output as if it were universal. If dash and bash
   disagree, the case must accept both or it will fail in CI on the shell you
   did not try.
