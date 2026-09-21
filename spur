@@ -46,6 +46,42 @@ A task's own exit code is propagated unchanged.
 EOF
 }
 
+# ------------------------------------------------------------------ locating
+
+# Absolute path of this script. Must run before any directory change.
+resolve_self() {
+  case $0 in
+    */*)
+      printf '%s/%s\n' "$(cd "$(dirname "$0")" && pwd)" "$(basename "$0")"
+      ;;
+    *)
+      self=$(command -v -- "$0" 2>/dev/null) || self=$0
+      case $self in
+        /*) printf '%s\n' "$self" ;;
+        *) printf '%s/%s\n' "$(cd "$(dirname "$self")" && pwd)" "$(basename "$self")" ;;
+      esac
+      ;;
+  esac
+}
+
+# Print the nearest Spurfile, searching upwards from the current directory.
+find_spurfile() {
+  dir=$PWD
+  while :; do
+    if [ -f "$dir/Spurfile" ]; then
+      printf '%s/Spurfile\n' "$dir"
+      return 0
+    fi
+    if [ -f "$dir/spurfile" ]; then
+      printf '%s/spurfile\n' "$dir"
+      return 0
+    fi
+    parent=$(dirname "$dir")
+    [ "$parent" = "$dir" ] && return 1
+    dir=$parent
+  done
+}
+
 # ----------------------------------------------------------- argument parsing
 
 spurfile_opt=
@@ -102,4 +138,25 @@ else
   task=
 fi
 
+# ---------------------------------------------------------------------- setup
+
+SPUR_BIN=$(resolve_self)
+SPUR_INVOCATION_DIR=$PWD
+
+if [ -n "$chdir_opt" ]; then
+  cd "$chdir_opt" || die 64 "cannot change directory: $chdir_opt"
+fi
+
+if [ -n "$spurfile_opt" ]; then
+  [ -f "$spurfile_opt" ] || die 66 "$spurfile_opt: no such file"
+  SPUR_FILE=$(cd "$(dirname "$spurfile_opt")" && pwd)/$(basename "$spurfile_opt")
+else
+  SPUR_FILE=$(find_spurfile) ||
+    die 66 "no Spurfile found in $PWD or any parent directory"
+fi
+
+SPUR_ROOT=$(dirname "$SPUR_FILE")
+cd "$SPUR_ROOT" || die 66 "cannot enter $SPUR_ROOT"
+
+printf 'Spurfile: %s\n\n' "$SPUR_FILE"
 exit 0
