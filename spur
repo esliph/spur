@@ -311,4 +311,7 @@ if [ -n "$dry_opt" ]; then
   exit 0
 fi
 
-exit 0
+SPUR_TASK=$task
+export SPUR_BIN SPUR_ROOT SPUR_INVOCATION_DIR SPUR_TASK
+
+exec sh -c "$script" "spur $task" "$@"
