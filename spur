@@ -289,6 +289,9 @@ build_script() {
   preamble=$PARSER_OUT
 
   script=$(printf '%s\n%s\n' "$PRELUDE" "$preamble")
+  if [ -n "$trace_opt" ]; then
+    script=$(printf "%s\nPS4='\$ '\nset -x\n" "$script")
+  fi
   script=$(printf '%s\n%s\n' "$script" "$body")
 }
 
