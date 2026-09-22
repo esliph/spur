@@ -102,7 +102,7 @@ spur -C api test -k x  # -C api is the runner's; -k x is the task's
 | `-n` | print the assembled script instead of running it |
 | `-x` | trace commands (`set -x`) after the preamble, with `PS4='$ '` |
 | `-h`, `--help` | show help |
-| `-V`, `--version` | show the version |
+| `-v`, `--version` | show the version |
 
 `spur` with no task name lists the tasks. Short flags cannot be grouped
 (`-xn` is not `-x -n`).

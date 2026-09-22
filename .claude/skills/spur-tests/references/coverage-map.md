@@ -21,7 +21,7 @@ each message. A message no case asserts is a branch no case reaches.
 
 ## What each group pins
 
-**`cli-`** (4) — `-h`/`--help` shows usage; `-V`/`--version` matches
+**`cli-`** (4) — `-h`/`--help` shows usage; `-v`/`--version` matches
 `spur N.N.N`; an unknown option is 64, and `-xn` is an unknown option, not
 `-x -n` (short flags deliberately do not group); `-f` and `-C` without an
 argument are 64.

@@ -18,8 +18,8 @@ die() {
 }
 
 usage() {
-  cat <<'EOF'
-spur - Simple Portable Universal Runner
+  cat <<EOF
+spur $VERSION - Simple Portable Universal Runner
 
 Usage:
   spur [runner flags] <task> [task arguments...]
@@ -34,7 +34,7 @@ Runner flags:
   -n             print the assembled script instead of running it
   -x             trace commands (set -x) after the preamble
   -h, --help     show this help and exit
-  -V, --version  show the version and exit
+  -v, --version  show the version and exit
 
 Running spur with no task name lists the tasks.
 
@@ -235,7 +235,7 @@ while [ $# -gt 0 ]; do
       usage
       exit 0
       ;;
-    -V | --version)
+    -v | --version)
       printf 'spur %s\n' "$VERSION"
       exit 0
       ;;

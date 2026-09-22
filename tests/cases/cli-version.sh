@@ -1,4 +1,4 @@
-run -V
+run -v
 assert_status 0
 assert_stdout_matches '^spur [0-9]+\.[0-9]+\.[0-9]+$'
 
