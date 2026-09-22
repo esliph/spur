@@ -4,13 +4,102 @@
 
 `spur` reads a `Spurfile`, lists the tasks, and runs each one in a single
 shell with positional argument passthrough. There is nothing to compile and
-no runtime to install: it is one shell script that runs on any Unix,
-including a minimal Alpine container, where `just` and Task need a binary and
-`make` is not always present.
+no runtime to install: it is one shell script that runs on any Unix.
 
 The scope is deliberately smaller than make's: **spur runs tasks, it does not
 build software.** No dependency graph, no timestamp-based rebuilds, no
 pattern rules.
+
+## Why spur exists
+
+### The problem
+
+`make` is a build system that most projects use as a task runner. Once every
+target is `.PHONY`, its engine — the timestamp graph, the pattern rules, the
+built-in recipes for compiling C — is dead weight, while its gotchas are
+still fully alive: the mandatory TAB, a separate shell for every recipe line
+so `cd` does not persist, `$$` to get a literal `$` through to the shell, and
+a different dialect on BSD than on GNU.
+
+The modern answers to that — `just`, Task — fix the gotchas, and charge for
+it in a currency make never asked for: a compiled binary. On a laptop that is
+one `brew install`. In a CI image, an Alpine container, a locked-down server
+or a machine with no toolchain, it is a download per architecture, a
+checksum, a version to pin, and one more thing that can be missing at the
+moment you need it.
+
+spur takes the third route. It keeps make's shape — a file of named recipes
+at the root of the repository, run as `spur test` — throws the build engine
+away instead of working around it, and ships as a single sh script, so there
+is nothing left to install.
+
+### Against the alternatives
+
+| | make | just | Task | spur |
+|---|---|---|---|---|
+| Runtime to install | usually already present | a binary per platform | a binary per platform | none: `sh` and `awk` |
+| In a minimal container | not always there | fetch the right arch | fetch the right arch | runs on what is already there |
+| What it is | a build system | a task runner | a task runner | a task runner |
+| Dependency graph | yes, by timestamp | yes, ordering | yes, plus up-to-date checks | none, by design |
+| Argument passthrough | none; use a variable | declared parameters | variables on the CLI | `"$@"`, verbatim |
+| Native Windows | no | yes | yes | no |
+
+`just` and Task are better tools than spur wherever a binary is not a
+problem: they are faster, they have real parameters, and they run natively on
+Windows. spur wins in exactly one place, and it is a place a lot of work
+happens — a container or a server where you would rather add nothing at all.
+
+### What is actually different
+
+- **Nothing to install.** The runner is one file that depends on `sh` and
+  `awk`. Fetch it with `curl`, or commit it into the repository and let
+  whoever clones run `./spur test` on a machine with no package manager and
+  no network.
+- **Positional passthrough.** `spur test -k login -vv` hands `-k login -vv`
+  to the body as `"$@"`. make has nothing for this; the usual workarounds are
+  a variable (`make test ARGS='-k login'`) or a wrapper script. It is the
+  single feature most often missing when a Makefile is used as a task runner.
+- **One shell for the whole task.** The body is an ordinary shell block, not
+  a dialect: `cd` persists, variables persist, `if` and `for` and heredocs
+  work the way they do in a script, and `set -e` aborts on the first failure.
+- **The runner expands nothing.** `$IMAGE`, `$(date)`, `${x:-y}` and `$$`
+  reach the shell byte for byte. There is no template layer to escape, so
+  there is nothing to learn beyond the shell you already know.
+- **A scope you can read in an afternoon.** About 330 lines of sh with the
+  parser included. When it does something surprising, the source is right
+  there and it is the same file that was installed.
+
+### What it costs
+
+These are consequences of the design, accepted deliberately, not a backlog:
+
+1. **A task can run more than once.** With no graph there is no dedup: if
+   `build` calls `deps` and `lint` calls `deps`, `deps` runs twice. That is
+   the price of explicit calls, and the gain is that argument passthrough
+   stays symmetric and visible in the body.
+2. **No parallelism and no incremental rebuild.** Both need a dependency
+   graph, and `-j`, timestamps and pattern rules are out of the product's
+   scope, not just of this version. If you are compiling software, you want
+   make or CMake, and spur is happy to be the thing that calls them.
+3. **`-n` does not expand the call chain.** The dry run shows the assembled
+   script of the task you asked for, and only that. A `spur deps` inside a
+   body happens at run time, and discovering it statically would mean
+   interpreting shell.
+4. **make's per-line `@` is not implementable.** make dispatches one line at
+   a time; spur hands the whole block to one `sh` and does not know where
+   each command begins. Use `spur -x` to trace the whole invocation, or
+   `{ set +x; } 2>/dev/null` … `set -x` for a stretch of the body (the
+   redirection is needed because a bare `set +x` echoes itself before
+   turning off).
+5. **The preamble runs for every task.** Irrelevant when it is cheap
+   (assignments, `.env`, functions); costly if you put real work there.
+6. **No native Windows.** spur needs a POSIX shell: Git Bash, MSYS2, WSL or
+   Cygwin. That is make's requirement too, so it is not a regression.
+   "Portable" here means *runs on any Unix, under any POSIX shell, with no
+   runtime installed* — not *runs natively everywhere*.
+7. **Chained calls do not inherit `-f`.** Inside a body, `spur other` finds
+   the Spurfile by the usual upward search from `SPUR_ROOT`. Propagating `-f`
+   would break `spur -C sub build` in a body.
 
 ## Install
 
@@ -177,30 +266,6 @@ A task's own exit code is propagated unchanged. Runner errors use the
 | `target: deps` | call `spur deps` from the body |
 | `include`, `ifeq` | the preamble has real `.` and `if` |
 | `$(MAKE) -C sub` | `spur -C sub build` |
-
-## Known limitations
-
-1. **A task can run more than once.** With no graph there is no dedup: if
-   `build` calls `deps` and `lint` calls `deps`, `deps` runs twice. That is
-   the price of explicit calls, and the gain is that argument passthrough
-   stays symmetric and visible in the body.
-2. **`-n` does not expand the call chain.** It shows the assembled script of
-   the task you asked for, and only that. A `spur deps` inside a body happens
-   at run time, and discovering it statically would mean interpreting shell.
-3. **make's per-line `@` is not implementable.** make dispatches one line at
-   a time; spur hands the whole block to one `sh` and does not know where
-   each command begins. Use `spur -x` for the whole invocation, or
-   `{ set +x; } 2>/dev/null` … `set -x` for a stretch (the redirection is
-   needed because a bare `set +x` echoes itself before turning off).
-4. **The preamble runs for every task.** Irrelevant when it is cheap
-   (assignments, `.env`, functions); costly if you put real work there.
-5. **No native Windows.** spur needs a POSIX shell: Git Bash, MSYS2, WSL or
-   Cygwin. That is make's requirement too, so it is not a regression.
-   "Portable" here means *runs on any Unix, under any POSIX shell, with no
-   runtime installed* — not *runs natively everywhere*.
-6. **Chained calls do not inherit `-f`.** Inside a body, `spur other` finds
-   the Spurfile by the usual upward search from `SPUR_ROOT`. Propagating `-f`
-   would break `spur -C sub build` in a body.
 
 ## License
 
