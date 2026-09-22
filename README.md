@@ -14,10 +14,24 @@ pattern rules.
 
 ## Install
 
+Latest — `master` is the tip of development and the ref every tag is cut
+from:
+
 ```sh
 curl -fsSL https://raw.githubusercontent.com/esliph/spur/master/spur \
   -o ~/.local/bin/spur && chmod +x ~/.local/bin/spur
 ```
+
+A specific version: the URL takes any git ref, so put a tag from [the tag
+list](https://github.com/esliph/spur/tags) in place of `<tag>`.
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/esliph/spur/<tag>/spur \
+  -o ~/.local/bin/spur && chmod +x ~/.local/bin/spur
+```
+
+`spur -v` prints the version that is installed, and upgrading is the same
+command with another ref.
 
 Or vendor it: copy `spur` into your repository and commit it. Anyone who
 clones runs `./spur test` without installing anything, and chained calls
@@ -48,7 +62,7 @@ db-reset: ## recreate the database (destructive)
 
 ```console
 $ spur --list
-Spurfile: /home/dan/project/Spurfile
+Spurfile: /home/usr/project/Spurfile
 
   build      build the image
   test       run the tests
