@@ -11,6 +11,7 @@ assert_status 0
 assert_stdout_is <<EOF
 Spurfile: $PWD/Spurfile
 
+Tasks
   zebra   last alphabetically, first in the file
   alpha   first alphabetically, last in the file
 EOF

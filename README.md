@@ -203,6 +203,7 @@ test: ## run the tests
   spur build
   pytest -q "$@"
 
+##@ Database
 db-reset: ## recreate the database (destructive)
   dropdb --if-exists app && createdb app
 ```
@@ -211,8 +212,11 @@ db-reset: ## recreate the database (destructive)
 $ spur --list
 Spurfile: /home/usr/project/Spurfile
 
+Tasks
   build      build the image
   test       run the tests
+
+Database
   db-reset   recreate the database (destructive)
 
 $ spur test -k login -vv
@@ -224,6 +228,10 @@ $ spur test -k login -vv
 `.` (`db-reset`, `docker.build`).
 - `## text` in the header is the description shown by `--list`. A task
 without one is still runnable.
+- `##@ Title` at column zero opens a section: `--list` groups the tasks that
+follow under that heading, in file order. Tasks before the first `##@`, or
+after a `##@` with no title, are listed under `Tasks`. A section with no
+tasks is not shown. To the shell it is an ordinary comment.
 - The body is indented. Spaces are canonical; a tab is accepted and never
 required.
 - Before running, the runner removes the longest common indentation from the
