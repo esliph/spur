@@ -39,8 +39,8 @@ The runner is four sequential stages inside one file, in this order:
    case-insensitive). The process then `cd`s to the Spurfile's directory, so
    every task runs from there.
 2. **Parsing** — `AWK_PARSER`, a single awk program held in a single-quoted
-   shell string, with three modes selected by `-v mode=`: `list`, `preamble`,
-   `body`. It emits diagnostics on **stdout** and carries meaning in the exit
+   shell string, with five modes selected by `-v mode=`: `list`, `names`,
+   `preamble`, `body`, `describe`. It emits diagnostics on **stdout** and carries meaning in the exit
    status (65 malformed, 67 unknown task) because `/dev/stderr` is not portable
    across awk implementations. `run_parser` must stay a function writing to the
    global `PARSER_OUT` — wrapping it in a command substitution would swallow

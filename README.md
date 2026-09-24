@@ -199,6 +199,8 @@ build: ## build the image
   _log "building $IMAGE"
   docker build -t "$IMAGE" .
 
+## Build first, then run pytest. Arguments go straight to pytest:
+##   spur test -k login -vv
 test: ## run the tests
   spur build
   pytest -q "$@"
@@ -219,6 +221,12 @@ Tasks
 Database
   db-reset   recreate the database (destructive)
 
+$ spur --describe test
+test: run the tests
+
+Build first, then run pytest. Arguments go straight to pytest:
+  spur test -k login -vv
+
 $ spur test -k login -vv
 ```
 
@@ -228,6 +236,11 @@ $ spur test -k login -vv
 `.` (`db-reset`, `docker.build`).
 - `## text` in the header is the description shown by `--list`. A task
 without one is still runnable.
+- `##` lines at column zero right above a header are the task's long help,
+shown by `spur --describe <task>`. The block must touch the header: a blank
+line, a `#` comment or a `##@` in between detaches it. Each line loses `##`
+and one space; the rest, indentation included, is printed as written, and a
+bare `##` is a blank line. To the shell they are ordinary comments.
 - `##@ Title` at column zero opens a section: `--list` groups the tasks that
 follow under that heading, in file order. Tasks before the first `##@`, or
 after a `##@` with no title, are listed under `Tasks`. A section with no
@@ -272,6 +285,7 @@ spur -C api test -k x  # -C api is the runner's; -k x is the task's
 | `-n`              | print the assembled script instead of running it              |
 | `--check`         | syntax-check the task, or every task, without running it      |
 | `--names`         | print the task names, one per line, and exit                  |
+| `--describe`      | print the task's long help (its `##` block) and exit          |
 | `-x`              | trace commands (`set -x`) after the preamble, with `PS4='$ '` |
 | `-h`, `--help`    | show help                                                     |
 | `-v`, `--version` | show the version                                              |
@@ -298,6 +312,13 @@ with the usual exit codes. It cannot be combined with `-l`, `-n`, `-x` or
 ```sh
 for t in $(spur --names); do spur --check "$t"; done
 ```
+
+`spur --describe <task>` documents a task's interface without the runner
+interpreting its arguments. It prints `task: description` from the header,
+then the `##` block above it; with neither, `task: (no description)`. It
+runs nothing, needs a task name (64 without one), exits 67 for an unknown
+task, and cannot be combined with `-l`, `-n`, `-x`, `--check` or `--names`.
+It is `--describe` and not `-h`, because `spur test -h` belongs to the task.
 
 ### Shell completion
 

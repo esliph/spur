@@ -3,6 +3,10 @@
 HARNESS=tests/run.sh
 SOURCES="spur tests/run.sh tests/lib.sh"
 
+## Arguments go to the harness: a case name runs just that case, and a name
+## no case has runs every case containing it.
+##   spur test discovery-flag-f
+##   spur test parse-
 test: ## run the behavior tests
   sh "$HARNESS" "$@"
 
