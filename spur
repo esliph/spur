@@ -32,6 +32,7 @@ Runner flags:
   -C DIR         change to DIR before anything else
   -l, --list     list the tasks and exit
   -n             print the assembled script instead of running it
+  --check        syntax-check the task (or every task) without running it
   -x             trace commands (set -x) after the preamble
   -h, --help     show this help and exit
   -v, --version  show the version and exit
@@ -87,6 +88,7 @@ find_spurfile() {
 # The Spurfile parser. Modes:
 #   list      one formatted line per task, under its ##@ section heading
 #   preamble  every line before the first task header
+#   names     one task name per line, in file order
 #   body      the dedented body of the task named by "want"
 # Diagnostics go to stdout; the exit status carries the meaning (65 syntax,
 # 67 unknown task), because /dev/stderr is not portable across awks.
@@ -151,6 +153,10 @@ END {
     }
     exit 0
   }
+  if (mode == "names") {
+    for (i = 1; i <= nt; i++) print tname[i]
+    exit 0
+  }
   if (mode == "preamble") {
     for (i = 1; i <= npre; i++) print pre[i]
     exit 0
@@ -212,6 +218,7 @@ chdir_opt=
 list_opt=
 dry_opt=
 trace_opt=
+check_opt=
 
 while [ $# -gt 0 ]; do
   case $1 in
@@ -237,6 +244,10 @@ while [ $# -gt 0 ]; do
       trace_opt=1
       shift
       ;;
+    --check)
+      check_opt=1
+      shift
+      ;;
     -h | --help)
       usage
       exit 0
@@ -253,6 +264,10 @@ while [ $# -gt 0 ]; do
       ;;
   esac
 done
+
+if [ -n "$check_opt" ] && [ -n "$list_opt$dry_opt$trace_opt" ]; then
+  die 64 "--check cannot be combined with -l, -n or -x"
+fi
 
 if [ $# -gt 0 ]; then
   task=$1
@@ -302,6 +317,45 @@ build_script() {
   fi
   script=$(printf '%s\n%s\n' "$script" "$body")
 }
+
+# ------------------------------------------------------------------ checking
+
+check_failed=
+
+# check_task TASK -- syntax-check the assembled script with sh -n, which
+# parses without running anything. Errors are labelled like a real run.
+check_task() {
+  build_script "$1"
+  if ! sh -n -c "$script" "spur $1"; then
+    printf "spur: run 'spur -n %s' to see the assembled script\n" "$1" >&2
+    check_failed=1
+  fi
+}
+
+# check_tasks [TASK] -- check the preamble on its own first, so that a broken
+# preamble is reported once instead of once per task; then TASK, or every
+# task in file order. Exits 65 if anything fails to parse.
+check_tasks() {
+  run_parser preamble "" || parser_error $?
+  sh -n -c "$(printf '%s\n%s\n' "$PRELUDE" "$PARSER_OUT")" "spur (preamble)" ||
+    exit 65
+  if [ -n "$1" ]; then
+    check_task "$1"
+  else
+    run_parser names "" || parser_error $?
+    # Task names match [A-Za-z0-9_.-]+, so splitting them cannot glob.
+    # shellcheck disable=SC2086
+    for name in $PARSER_OUT; do
+      check_task "$name"
+    done
+  fi
+  [ -z "$check_failed" ] || exit 65
+}
+
+if [ -n "$check_opt" ]; then
+  check_tasks "$task"
+  exit 0
+fi
 
 # ----------------------------------------------------------------- listing
 

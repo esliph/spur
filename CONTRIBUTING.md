@@ -33,7 +33,7 @@ CI adds busybox ash (Alpine, via Docker) and `shellcheck -s sh`.
 
 Create `tests/cases/group-what-it-checks.sh`, where `group-` is the theme prefix
 of its neighbours (`cli-`, `discovery-`, `parse-`, `assembly-`, `exec-`, `chain-`,
-`trace-`, `harness-`); its name, without `.sh`, is the case
+`trace-`, `check-`, `harness-`); its name, without `.sh`, is the case
 name you pass to `sh tests/run.sh`, so keep it unique. The file runs with its cwd set to
 a private directory, with these helpers in scope:
 

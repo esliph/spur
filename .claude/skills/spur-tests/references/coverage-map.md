@@ -66,6 +66,13 @@ shell's quoting; the preamble is not traced, so preamble values do not leak to
 stderr; `-n` beats `-x` (the script is printed, including `set -x`, and
 nothing runs).
 
+**`check-`** (9, added 2026-09-24) — `--check` is silent on success, reports
+every task that fails `sh -n` (labelled `spur <task>:` plus a hint to run
+`-n`), reports a broken preamble once and stops, checks a single named task,
+is 67 for an unknown one, runs nothing (not even a `$(...)`), is 64 with `-l`,
+`-n` or `-x`, and passes on an empty Spurfile. Error wording varies by shell
+(busybox reports `line 0`), so the cases only pin the `spur <task>:` prefix.
+
 **`harness-`** (1) — exact name beats substring, substring selects a group,
 selecting nothing is 64.
 

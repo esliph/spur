@@ -270,6 +270,7 @@ spur -C api test -k x  # -C api is the runner's; -k x is the task's
 | `-C DIR`          | change to DIR before anything else                            |
 | `-l`, `--list`    | list the tasks and exit                                       |
 | `-n`              | print the assembled script instead of running it              |
+| `--check`         | syntax-check the task, or every task, without running it      |
 | `-x`              | trace commands (`set -x`) after the preamble, with `PS4='$ '` |
 | `-h`, `--help`    | show help                                                     |
 | `-v`, `--version` | show the version                                              |
@@ -277,6 +278,15 @@ spur -C api test -k x  # -C api is the runner's; -k x is the task's
 
 `spur` with no task name lists the tasks. Short flags cannot be grouped
 (`-xn` is not `-x -n`).
+
+`spur --check` validates the Spurfile in CI without running anything: it
+assembles each task as `-n` would and hands it to `sh -n`, which parses but
+does not execute. An `if` without `fi` or an unterminated heredoc fails with
+65, every broken task is reported, and success prints nothing. It checks
+syntax only: a misspelled command or an unset variable still passes. Name a
+task (`spur --check deploy`) to check just that one. The line numbers in the
+errors refer to the assembled script, so `spur -n <task>` shows what they
+point at.
 
 ## How a task runs
 

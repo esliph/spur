@@ -96,8 +96,8 @@ another, so the order carries no meaning. The `group-` prefix keeps related case
 together and lets `sh tests/run.sh <group>-` run the whole group: `cli-`,
 `discovery-` (finding the Spurfile, `-f`, `-C`), `parse-` (parsing and `list`),
 `assembly-` (generated script, dry run), `exec-` (running a task), `chain-`
-(`spur` called from a task), `trace-` (`-x`) and `harness-` (the harness
-itself). Prefer `assert_stdout_is` against
+(`spur` called from a task), `trace-` (`-x`), `check-` (`--check`) and
+`harness-` (the harness itself). Prefer `assert_stdout_is` against
 `run -n <task>` when asserting on assembly — it pins the exact generated
 script.
 

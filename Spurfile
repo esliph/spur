@@ -16,6 +16,7 @@ test-all: ## run the tests under every POSIX shell available locally
 lint: ## run shellcheck over the runner and the test suite
   shellcheck -s sh $SOURCES tests/cases/*.sh
 
-check: ## lint and test
+check: ## check the Spurfile, lint and test
+  spur --check
   spur lint
   spur test
