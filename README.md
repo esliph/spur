@@ -271,6 +271,7 @@ spur -C api test -k x  # -C api is the runner's; -k x is the task's
 | `-l`, `--list`    | list the tasks and exit                                       |
 | `-n`              | print the assembled script instead of running it              |
 | `--check`         | syntax-check the task, or every task, without running it      |
+| `--names`         | print the task names, one per line, and exit                  |
 | `-x`              | trace commands (`set -x`) after the preamble, with `PS4='$ '` |
 | `-h`, `--help`    | show help                                                     |
 | `-v`, `--version` | show the version                                              |
@@ -287,6 +288,38 @@ syntax only: a misspelled command or an unset variable still passes. Name a
 task (`spur --check deploy`) to check just that one. The line numbers in the
 errors refer to the assembled script, so `spur -n <task>` shows what they
 point at.
+
+`--list` is for people; `spur --names` is for programs. It prints the task
+names in file order, one per line, with no header, sections or descriptions,
+and prints nothing at all when there are no tasks. Errors go to stderr only,
+with the usual exit codes. It cannot be combined with `-l`, `-n`, `-x` or
+`--check`.
+
+```sh
+for t in $(spur --names); do spur --check "$t"; done
+```
+
+### Shell completion
+
+Each snippet completes task names for the first word after `spur` and falls
+back to file names after it. They call the `spur` on your `PATH`.
+
+```bash
+# bash (~/.bashrc)
+_spur() { [ "$COMP_CWORD" -eq 1 ] && COMPREPLY=($(compgen -W "$(spur --names 2>/dev/null)" -- "$2")); }
+complete -o default -F _spur spur
+```
+
+```zsh
+# zsh (~/.zshrc, after compinit)
+_spur() { if (( CURRENT == 2 )); then compadd -- ${(f)"$(spur --names 2>/dev/null)"}; else _files; fi }
+compdef _spur spur
+```
+
+```fish
+# fish (~/.config/fish/completions/spur.fish)
+complete -c spur -f -n __fish_is_first_arg -a '(spur --names 2>/dev/null)'
+```
 
 ## How a task runs
 

@@ -33,6 +33,7 @@ Runner flags:
   -l, --list     list the tasks and exit
   -n             print the assembled script instead of running it
   --check        syntax-check the task (or every task) without running it
+  --names        print the task names, one per line, and exit
   -x             trace commands (set -x) after the preamble
   -h, --help     show this help and exit
   -v, --version  show the version and exit
@@ -219,6 +220,7 @@ list_opt=
 dry_opt=
 trace_opt=
 check_opt=
+names_opt=
 
 while [ $# -gt 0 ]; do
   case $1 in
@@ -248,6 +250,10 @@ while [ $# -gt 0 ]; do
       check_opt=1
       shift
       ;;
+    --names)
+      names_opt=1
+      shift
+      ;;
     -h | --help)
       usage
       exit 0
@@ -264,6 +270,10 @@ while [ $# -gt 0 ]; do
       ;;
   esac
 done
+
+if [ -n "$names_opt" ] && [ -n "$list_opt$dry_opt$trace_opt$check_opt" ]; then
+  die 64 "--names cannot be combined with -l, -n, -x or --check"
+fi
 
 if [ -n "$check_opt" ] && [ -n "$list_opt$dry_opt$trace_opt" ]; then
   die 64 "--check cannot be combined with -l, -n or -x"
@@ -358,6 +368,14 @@ if [ -n "$check_opt" ]; then
 fi
 
 # ----------------------------------------------------------------- listing
+
+# --names is the machine-readable list: bare names, and nothing at all when
+# there are no tasks, so that completions and loops need no parsing.
+if [ -n "$names_opt" ]; then
+  run_parser names "" || parser_error $?
+  [ -z "$PARSER_OUT" ] || printf '%s\n' "$PARSER_OUT"
+  exit 0
+fi
 
 if [ -n "$list_opt" ] || [ -z "$task" ]; then
   if [ -z "$task" ] && { [ -n "$dry_opt" ] || [ -n "$trace_opt" ]; }; then
