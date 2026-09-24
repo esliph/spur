@@ -33,6 +33,8 @@ assert_stdout_lacks 'passed'
 assert_stderr_has 'no test matches: no-such-case'
 
 # The prefixes group cases by theme: a prefix selects the whole group.
+group=0
+for f in "$root"/tests/cases/cli-*.sh; do group=$((group + 1)); done
 harness cli-
 assert_status 0
-assert_stdout_has '4 passed, 0 failed'
+assert_stdout_has "$group passed, 0 failed"
