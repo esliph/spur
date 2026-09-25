@@ -81,7 +81,7 @@ mkdir -p "$workdir" || {
 
 # measure_failed STATUS ARGS... -- end the scenario after a failing run,
 # showing what the runner printed on stderr.
-# shellcheck disable=SC2329  # called by measure, which the sourced scenarios call
+# shellcheck disable=SC2317,SC2329  # called by measure, which the sourced scenarios call
 measure_failed() {
   code=$1
   shift
@@ -93,7 +93,7 @@ measure_failed() {
 # measure ARGS... -- time the runner with ARGS: one warm-up run, then
 # $iterations timed runs. Leaves "RUNS MIN MEAN MAX" in the scenario's
 # result file.
-# shellcheck disable=SC2329  # called by the scenarios sourced below
+# shellcheck disable=SC2317,SC2329  # called by the scenarios sourced below
 measure() {
   if [ -f "$bench_result" ]; then
     printf 'measure called twice: one measurement per scenario\n'
