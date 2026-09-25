@@ -128,11 +128,14 @@ fi
 # non-interactive shell, so a Ctrl-C reaches only this process and the stop
 # has to be passed on. A second INT or TERM stops waiting: the workers are
 # killed, since one left running would go on to the next case in a work
-# directory that is about to be removed.
+# directory that is about to be removed. That trap calls cleanup itself: bash
+# 3.2 (sh on macOS) skips the EXIT trap on an exit from a trap nested in
+# another, and it holds the second signal until the wait is over, so there
+# the workers finish their case before they stop.
 # shellcheck disable=SC2317,SC2329  # invoked through the INT and TERM traps
 interrupt() {
   # shellcheck disable=SC2064  # $pids is meant to be expanded now
-  trap "kill $pids 2>/dev/null; exit 130" INT TERM
+  trap "kill $pids 2>/dev/null; cleanup; exit 130" INT TERM
   : >"$workdir/.stop"
   wait
   exit "$1"
