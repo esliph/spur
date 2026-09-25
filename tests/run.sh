@@ -63,15 +63,29 @@ if [ "$count" -eq 0 ]; then
 fi
 [ "$workers" -le "$count" ] || workers=$count
 
-# shellcheck disable=SC2317,SC2329  # invoked through the EXIT and INT traps
+# shellcheck disable=SC2317,SC2329  # invoked through the EXIT trap
 cleanup() { rm -rf "$workdir"; }
 trap cleanup EXIT
-trap 'cleanup; exit 130' INT
 
 mkdir -p "$workdir" || {
   printf 'cannot create %s\n' "$workdir" >&2
   exit 70
 }
+
+# interrupt STATUS -- let each worker finish the case it is running and start
+# no other, wait for them, then exit with STATUS; the EXIT trap removes the
+# work directory. Workers are asynchronous lists, which ignore SIGINT in a
+# non-interactive shell, so a Ctrl-C reaches only this process and the stop
+# has to be passed on. A second Ctrl-C stops waiting.
+# shellcheck disable=SC2317,SC2329  # invoked through the INT and TERM traps
+interrupt() {
+  trap 'exit 130' INT
+  : >"$workdir/.stop"
+  wait
+  exit "$1"
+}
+trap 'interrupt 130' INT
+trap 'interrupt 143' TERM
 
 # run_case NAME -- run one case, leaving its output in NAME.log and its exit
 # status in NAME.status, next to its directory.
@@ -95,6 +109,7 @@ run_worker() {
   # Case names are file names: no spaces, no glob characters.
   # shellcheck disable=SC2086
   for name in $names; do
+    [ ! -f "$workdir/.stop" ] || return 0
     if [ $((i % workers)) -eq "$1" ]; then
       run_case "$name"
     fi
