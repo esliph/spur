@@ -1,8 +1,8 @@
 # Assertion helpers for the spur test suite.
 #
 # Sourced by tests/run.sh inside each case's own temporary directory. The
-# variables $runner and $shell_under_test come from the harness.
-# shellcheck disable=SC2154  # $runner and $shell_under_test come from tests/run.sh
+# variables $root, $runner and $shell_under_test come from the harness.
+# shellcheck disable=SC2154  # $root, $runner and $shell_under_test come from tests/run.sh
 
 fail() {
   printf 'assertion failed: %s\n' "$*"
@@ -16,12 +16,36 @@ fail() {
 # Write ./Spurfile from stdin.
 spurfile() { cat > Spurfile; }
 
-# Run the runner under test; capture stdout, stderr and the exit status.
-run() {
-  "$shell_under_test" "$runner" "$@" >stdout 2>stderr
+# load_file FILE -- set $loaded to the contents of FILE with the read builtin,
+# so no process is started. A last line without a trailing newline is kept;
+# the final newline itself is dropped, which no substring match can see.
+load_file() {
+  loaded=
+  _nl=
+  while IFS= read -r _line || [ -n "$_line" ]; do
+    loaded=$loaded$_nl$_line
+    _nl='
+'
+  done <"$1"
+}
+
+# capture COMMAND [ARGS...] -- run any command; leave its output in the files
+# stdout and stderr and in the variables $stdout and $stderr, and its exit
+# status in $status. The has/lacks assertions read the variables, so a case
+# that runs something other than the runner (the harness, a vendored copy)
+# goes through capture too.
+capture() {
+  "$@" >stdout 2>stderr
   status=$?
+  load_file stdout
+  stdout=$loaded
+  load_file stderr
+  stderr=$loaded
   return 0
 }
+
+# Run the runner under test; capture stdout, stderr and the exit status.
+run() { capture "$shell_under_test" "$runner" "$@"; }
 
 assert_status() {
   [ "$status" = "$1" ] || fail "expected exit status $1, got $status"
@@ -33,13 +57,19 @@ assert_stdout_is() {
   diff -u expected stdout || fail "stdout differs from expected"
 }
 
+# The has/lacks assertions: a quoted "$1" in a case pattern is literal, so
+# they match fixed strings like grep -F, without starting grep.
 assert_stdout_has() {
-  grep -qF -- "$1" stdout || fail "stdout does not contain: $1"
+  case $stdout in
+    *"$1"*) ;;
+    *) fail "stdout does not contain: $1" ;;
+  esac
 }
 
 assert_stdout_lacks() {
-  grep -qF -- "$1" stdout && fail "stdout unexpectedly contains: $1"
-  return 0
+  case $stdout in
+    *"$1"*) fail "stdout unexpectedly contains: $1" ;;
+  esac
 }
 
 assert_stdout_matches() {
@@ -47,12 +77,16 @@ assert_stdout_matches() {
 }
 
 assert_stderr_has() {
-  grep -qF -- "$1" stderr || fail "stderr does not contain: $1"
+  case $stderr in
+    *"$1"*) ;;
+    *) fail "stderr does not contain: $1" ;;
+  esac
 }
 
 assert_stderr_lacks() {
-  grep -qF -- "$1" stderr && fail "stderr unexpectedly contains: $1"
-  return 0
+  case $stderr in
+    *"$1"*) fail "stderr unexpectedly contains: $1" ;;
+  esac
 }
 
 assert_stderr_matches() {
