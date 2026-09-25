@@ -17,11 +17,20 @@ test: ## run the behavior tests
 bench: ## measure the runner's performance
   sh "$BENCH" "$@"
 
-test-all: ## run the tests under every POSIX shell available locally
+## The shells run with the default awk; then every awk found runs with one
+## shell, dash when there is one, since the two vary independently.
+test-all: ## run the tests under every POSIX shell and awk available locally
   for candidate in sh dash bash; do
     command -v "$candidate" >/dev/null 2>&1 || continue
     printf '== %s\n' "$candidate"
     SPUR_TEST_SHELL=$candidate sh "$HARNESS" "$@"
+  done
+  shell=sh
+  command -v dash >/dev/null 2>&1 && shell=dash
+  for candidate in "gawk --posix" mawk original-awk "busybox awk"; do
+    command -v "${candidate%% *}" >/dev/null 2>&1 || continue
+    printf '== %s, awk: %s\n' "$shell" "$candidate"
+    SPUR_TEST_SHELL=$shell SPUR_TEST_AWK=$candidate sh "$HARNESS" "$@"
   done
 
 lint: ## run shellcheck over the runner and the test suite

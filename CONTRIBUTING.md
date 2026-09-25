@@ -28,7 +28,7 @@ as zero-dependency cannot require a framework to run its own tests.
 ```sh
 SPUR_TEST_SHELL=dash sh tests/run.sh   # the strictest; if it passes here, it is POSIX
 SPUR_TEST_SHELL=bash sh tests/run.sh
-./spur test-all                        # every shell found locally
+./spur test-all                        # every shell and awk found locally
 ```
 
 The parser is an awk program, so the awk varies too. `SPUR_TEST_AWK` names

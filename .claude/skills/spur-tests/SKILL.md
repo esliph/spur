@@ -93,7 +93,8 @@ hide a broken suite.
 executing `run.sh`. `SPUR_TEST_AWK` picks the awk it parses with, through a
 wrapper the harness puts first on `PATH`. `SPUR_TEST_TMPDIR` (default
 `/tmp`) is where the per-case directories go — never leave a `Spurfile`
-lying around in it, because `discovery-not-found` asserts that no ancestor of the case dir has one.
+lying around in it, because `discovery-not-found` asserts that no ancestor
+of the case dir has one.
 
 ### The matrix, and the local trap
 
