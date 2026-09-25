@@ -36,6 +36,31 @@ jobs:
       - name: Run the test suite
         run: SPUR_TEST_SHELL=${{ matrix.shell }} sh tests/run.sh
 
+  awk:
+    # The parser is an awk program; mawk alone (Ubuntu's default) is not a
+    # matrix. busybox awk runs in the busybox job, BSD awk in the macOS one.
+    name: tests (dash, awk ${{ matrix.awk }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        awk: [gawk --posix, mawk, original-awk]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dash and the awks
+        run: sudo apt-get update && sudo apt-get install -y dash gawk mawk original-awk
+      - name: Run the test suite
+        run: SPUR_TEST_SHELL=dash SPUR_TEST_AWK="${{ matrix.awk }}" sh tests/run.sh
+
+  macos:
+    # bash 3.2 as sh, BSD awk, and the BSD dirname and basename.
+    name: tests (macOS)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run the test suite
+        run: sh tests/run.sh
+
   busybox:
     name: tests (busybox ash)
     runs-on: ubuntu-latest

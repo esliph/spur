@@ -155,16 +155,14 @@ grammar but only `-` and `.` are tested.
   setting. Either document the constraint in `CONTRIBUTING.md` or have
   `run.sh` refuse a work directory that has a `Spurfile` above it.
 
-## Matrix gaps
+## The matrix (closed 2026-09-25)
 
-The suite's only axis of variation is the **shell**. The parser is an awk
-program, and the awk implementation is varied only by accident: CI's Ubuntu
-jobs use mawk and the Alpine job uses busybox awk, while gawk is exercised only
-on developer machines that happen to have it, and BSD awk (macOS) nowhere.
-Adding `macos-latest` to the `shells` matrix covers BSD awk and bash 3.2 in one
-move; a job that installs `gawk` and `original-awk` and runs the suite with
-each one first on `PATH` covers the rest. For a program whose parser is 75
-lines of awk, this is cheaper and catches more than another shell would.
+The awk used to vary only by accident. It is now an axis of its own:
+`SPUR_TEST_AWK` in the harness, a CI job per awk (`gawk --posix`, `mawk`,
+`original-awk`) under dash, busybox awk in the Alpine job, and BSD awk with
+bash 3.2 in the `macos-latest` job. Shells not yet in the matrix, if a gap
+ever shows: `posh` and `mksh` (stricter than dash on some points) and
+`yash`, all one `apt-get` away.
 
 ## Not worth testing
 

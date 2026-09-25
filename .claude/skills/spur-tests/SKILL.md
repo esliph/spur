@@ -102,8 +102,9 @@ of the case dir has one.
 (macOS, Git Bash on Windows) `/usr/bin/sh` is **bash in POSIX mode**, which
 happily accepts bashisms. A green `sh tests/run.sh` there proves very little.
 `SPUR_TEST_SHELL=dash` is the run that actually catches non-POSIX constructs;
-CI adds busybox ash for the same reason. Before claiming a change is done, run
-dash at minimum, and say which shells you actually ran.
+CI adds busybox ash and macOS for the same reason, and a job per awk because
+the parser is awk. Before claiming a change is done, run dash at minimum,
+and say which shells you actually ran.
 
 `shellcheck` is not installed everywhere. If the repository's lint task
 reports "command not found", say so plainly rather than treating the missing

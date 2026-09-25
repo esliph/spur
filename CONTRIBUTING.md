@@ -40,7 +40,9 @@ SPUR_TEST_AWK="gawk --posix" sh tests/run.sh   # refuses gawk-only functions
 SPUR_TEST_AWK=mawk sh tests/run.sh
 ```
 
-CI adds busybox ash (Alpine, via Docker) and `shellcheck -s sh`.
+CI adds busybox ash (Alpine, via Docker), macOS (bash 3.2 and BSD awk), one
+job per awk (`gawk --posix`, `mawk`, `original-awk`) and `shellcheck -s sh`,
+pinned to 0.11.0.
 
 ## Writing a case
 

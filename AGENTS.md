@@ -29,9 +29,10 @@ The repository dogfoods itself, so the same things are available through the
 Use the raw `sh tests/run.sh` form when debugging the runner itself, so a
 broken runner cannot hide a broken suite.
 
-CI (`.github/workflows/ci.yml`) runs shellcheck plus the suite under `sh`,
-`dash`, `bash` and busybox ash (Alpine in Docker), and runs every benchmark
-scenario once so none rots. Nothing is skipped locally that CI will not
+CI (`.github/workflows/ci.yml`) runs shellcheck (pinned to 0.11.0) plus the
+suite under `sh`, `dash`, `bash`, busybox ash (Alpine in Docker) and macOS
+(bash 3.2, BSD awk), then under dash once per awk (`gawk --posix`, `mawk`,
+`original-awk`), and runs every benchmark scenario once so none rots. Nothing is skipped locally that CI will not
 catch, but `dash` catches almost everything.
 
 ## Architecture
