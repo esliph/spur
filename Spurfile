@@ -1,7 +1,8 @@
 # Spurfile for spur itself. If these tasks are uncomfortable to write, the
 # design is wrong and we find out in the first week.
 HARNESS=tests/run.sh
-SOURCES="spur tests/run.sh tests/lib.sh"
+BENCH=tests/bench/run.sh
+SOURCES="spur tests/run.sh tests/lib.sh tests/common.sh tests/bench/*.sh"
 
 ## Arguments go to the harness: a case name runs just that case, and a name
 ## no case has runs every case containing it.
@@ -9,6 +10,12 @@ SOURCES="spur tests/run.sh tests/lib.sh"
 ##   spur test parse-
 test: ## run the behavior tests
   sh "$HARNESS" "$@"
+
+## Arguments go to the benchmark harness, selected like test. Set
+## SPUR_BENCH_ITERATIONS for more or fewer timed runs (default 10).
+##   spur bench run-
+bench: ## measure the runner's performance
+  sh "$BENCH" "$@"
 
 test-all: ## run the tests under every POSIX shell available locally
   for candidate in sh dash bash; do

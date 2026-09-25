@@ -13,21 +13,25 @@ the design of the tool.
 ## Commands
 
 ```sh
-sh tests/run.sh                        # full behavior suite
+sh tests/run.sh                        # full behavior suite, in parallel
 sh tests/run.sh discovery-flag-f       # a single case, by its exact name
-sh tests/run.sh parse-                # no case has that name: every case containing it (a group)
+sh tests/run.sh parse-                 # no case has that name: every case containing it (a group)
 SPUR_TEST_SHELL=dash sh tests/run.sh   # strictest shell; if it passes here it is POSIX
-shellcheck -s sh spur tests/run.sh tests/lib.sh tests/cases/*.sh
+SPUR_TEST_JOBS=1 sh tests/run.sh       # one case at a time
+SPUR_TEST_TIMES=1 sh tests/run.sh      # each case's duration, and the five slowest
+sh tests/bench/run.sh [name]           # benchmarks: numbers only, no baseline
+shellcheck -s sh spur tests/run.sh tests/lib.sh tests/common.sh tests/bench/*.sh tests/cases/*.sh
 ```
 
 The repository dogfoods itself, so the same things are available through the
-`Spurfile` (`./spur test`, `./spur lint`, `./spur test-all`, `./spur check`).
+`Spurfile` (`./spur test`, `./spur bench`, `./spur lint`, `./spur test-all`, `./spur check`).
 Use the raw `sh tests/run.sh` form when debugging the runner itself, so a
 broken runner cannot hide a broken suite.
 
 CI (`.github/workflows/ci.yml`) runs shellcheck plus the suite under `sh`,
-`dash`, `bash` and busybox ash (Alpine in Docker). Nothing is skipped locally
-that CI will not catch, but `dash` catches almost everything.
+`dash`, `bash` and busybox ash (Alpine in Docker), and runs every benchmark
+scenario once so none rots. Nothing is skipped locally that CI will not
+catch, but `dash` catches almost everything.
 
 ## Architecture
 
@@ -79,20 +83,41 @@ Things that follow from that structure and are easy to break:
 
 `tests/run.sh` is a hand-rolled harness — no bats, no shellspec, deliberately:
 a tool that advertises zero dependencies cannot need a framework to test
-itself. Each case runs in a subshell in its own temp dir under
-`${SPUR_TEST_TMPDIR:-/tmp}`, with `tests/lib.sh` sourced for helpers:
-`spurfile` (heredoc → `./Spurfile`), `run ARGS...` (fills `stdout`, `stderr`,
-`$status`), `assert_status`, `assert_stdout_is` (byte-exact, heredoc),
-`assert_{stdout,stderr}_{has,lacks,matches}`, `fail`.
+itself. It selects the cases (the rule lives in `tests/common.sh`, shared
+with the benchmark harness), runs them in parallel workers (`SPUR_TEST_JOBS`,
+default the number of CPUs), then reports in alphabetical order, so the
+output does not depend on the number of workers. `SPUR_TEST_TIMES=1` adds
+each case's duration and the five slowest. Each case runs in a subshell in
+its own temp dir under `${SPUR_TEST_TMPDIR:-/tmp}`, with stdin closed and
+`tests/lib.sh` sourced for helpers: `spurfile` (heredoc → `./Spurfile`),
+`run ARGS...` (fills the files `stdout` and `stderr`, the variables `$stdout`
+and `$stderr`, and `$status`), `capture CMD...` (the same for any other
+command: the harness, a vendored copy of the runner), `assert_status`,
+`assert_stdout_is` (byte-exact, heredoc),
+`assert_{stdout,stderr}_{has,lacks,matches}`, `fail`, and `fake_suite` (a
+copy of the harnesses and the runner in `./fake`, for `harness-` cases). The
+`has`/`lacks` assertions read the variables, so a command run without `run`
+or `capture` is invisible to them.
 
-`run.sh` unsets the `SPUR_*` variables before the loop, so running the suite
-through `./spur test` does not leak the outer invocation's state into cases.
+`run.sh` unsets the `SPUR_*` variables before the cases run, its own
+`SPUR_TEST_JOBS` and `SPUR_TEST_TIMES` included, so running the suite through
+`./spur test` does not leak the outer invocation's state into cases.
+
+`tests/bench/run.sh` measures the runner. It selects scenarios in
+`tests/bench/` by the same rule, runs them one at a time, and prints min,
+mean and max per scenario: numbers only, no baseline, no threshold. A
+scenario is a straight-line script, like a case, that prepares its directory
+and calls `measure ARGS...` once: one warm-up run of the runner with ARGS,
+then `SPUR_BENCH_ITERATIONS` (default 10) timed runs; a failing run fails the
+scenario. It needs `date +%s%N` to print nanoseconds and exits 69 when it
+does not.
 
 New cases go in `tests/cases/group-what-it-checks.sh`. The file name without `.sh`
 is the case name: unique in the directory, and what `sh tests/run.sh <name>`
 selects (an exact name wins over the substring filter, and a name that selects
-nothing exits 64). Cases run in alphabetical order and are independent of one
-another, so the order carries no meaning. The `group-` prefix keeps related cases
+nothing exits 64). Cases run in parallel and must be independent of one
+another; the report is alphabetical, and `SPUR_TEST_JOBS=1` runs them one at
+a time. The `group-` prefix keeps related cases
 together and lets `sh tests/run.sh <group>-` run the whole group: `cli-`,
 `discovery-` (finding the Spurfile, `-f`, `-C`), `parse-` (parsing and `list`),
 `assembly-` (generated script, dry run), `exec-` (running a task), `chain-`
@@ -109,8 +134,9 @@ script.
 - Inside `AWK_PARSER`: strict POSIX awk, and **never a single quote** — the
   program lives inside a single-quoted shell string and a quote would terminate
   it.
-- The runner may depend on `sh` and `awk` only. No `mktemp`, no `stat`, no
-  temporary files.
+- The runner may depend on `sh`, `awk` and the basic POSIX utilities
+  `dirname`, `basename` and `cat`, nothing else; `exec-minimal-path` holds it
+  to that. No `mktemp`, no `stat`, no temporary files.
 - Everything in this repository is written in English, including commits and
   comments.
 - Every behavior change comes with a test.
