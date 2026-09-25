@@ -1,6 +1,6 @@
 # Shared by the behavior harness (tests/run.sh) and the benchmark harness
 # (tests/bench/run.sh). Sourced, never run.
-# shellcheck disable=SC2034  # $names and $count are read by the harnesses
+# shellcheck disable=SC2034  # $names, $count, $clock and $ms are read by the harnesses
 
 # select_names DIR FILTER [EXCLUDE] -- set $names to the selected script names
 # in DIR (file names without .sh, space-separated, in glob order, which is
@@ -27,4 +27,24 @@ select_names() {
         ;;
     esac
   done
+}
+
+# detect_clock -- set $clock to 1 when `date +%s%N` prints nanoseconds since
+# the epoch. GNU date does; macOS prints a literal N; the busybox date in
+# Alpine 3.20 prints nothing for %N, which leaves whole seconds that look
+# like a number. Nanoseconds since the epoch have at least 19 digits.
+detect_clock() {
+  clock=
+  _now=$(date +%s%N 2>/dev/null)
+  case $_now in
+    '' | *[!0-9]*) ;;
+    *) [ "${#_now}" -lt 19 ] || clock=1 ;;
+  esac
+}
+
+# now_ms -- set $ms to the current time in milliseconds. Only meaningful once
+# detect_clock has set $clock.
+now_ms() {
+  ms=$(date +%s%N)
+  ms=${ms%??????}
 }

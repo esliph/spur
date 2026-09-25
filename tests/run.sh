@@ -18,7 +18,8 @@
 #   SPUR_TEST_TMPDIR    where the per-case directories go (default: /tmp)
 #   SPUR_TEST_JOBS      number of workers (default: the number of CPUs);
 #                       1 runs the cases one at a time
-# shellcheck disable=SC2154  # $names and $count come from tests/common.sh
+#   SPUR_TEST_TIMES     1 adds each case's duration and lists the five slowest
+# shellcheck disable=SC2154  # $names, $count, $clock and $ms come from tests/common.sh
 
 case $0 in
   */*) here=${0%/*} ;;
@@ -50,11 +51,22 @@ else
   esac
 fi
 
+timing=
+if [ "${SPUR_TEST_TIMES:-}" = 1 ]; then
+  detect_clock
+  if [ -n "$clock" ]; then
+    timing=1
+  else
+    printf 'timings unavailable: date +%%s%%N does not print nanoseconds here\n' >&2
+  fi
+fi
+
 # The runner exports its own state to child processes. When the suite is
 # started through spur itself (./spur test), that state would leak into every
 # case, so start from a clean slate. The harness's own controls go too: a
 # case that starts a harness gets the defaults unless it asks otherwise.
-unset SPUR_BIN SPUR_ROOT SPUR_INVOCATION_DIR SPUR_TASK SPUR_STACK SPUR_TEST_JOBS
+unset SPUR_BIN SPUR_ROOT SPUR_INVOCATION_DIR SPUR_TASK SPUR_STACK \
+  SPUR_TEST_JOBS SPUR_TEST_TIMES
 
 select_names "$root/tests/cases" "$filter"
 if [ "$count" -eq 0 ]; then
@@ -87,10 +99,15 @@ interrupt() {
 trap 'interrupt 130' INT
 trap 'interrupt 143' TERM
 
-# run_case NAME -- run one case, leaving its output in NAME.log and its exit
-# status in NAME.status, next to its directory.
+# run_case NAME -- run one case, leaving its output in NAME.log and, in
+# NAME.status, its exit status followed by its duration in milliseconds when
+# timing is on.
 run_case() {
   mkdir "$workdir/$1"
+  if [ -n "$timing" ]; then
+    now_ms
+    start=$ms
+  fi
   (
     cd "$workdir/$1" || exit 1
     . "$root/tests/lib.sh"
@@ -98,7 +115,12 @@ run_case() {
     . "$root/tests/cases/$1.sh"
   ) >"$workdir/$1.log" 2>&1 </dev/null
   rc=$?
-  printf '%s\n' "$rc" >"$workdir/$1.status"
+  elapsed=
+  if [ -n "$timing" ]; then
+    now_ms
+    elapsed=$((ms - start))
+  fi
+  printf '%s %s\n' "$rc" "$elapsed" >"$workdir/$1.status"
 }
 
 # run_worker K -- run, one after another, the selected cases whose position in
@@ -126,25 +148,38 @@ wait
 
 passed=0
 failed=0
+slowest=
 # Case names are file names: no spaces, no glob characters.
 # shellcheck disable=SC2086
 for name in $names; do
   rc=
+  elapsed=
   if [ -f "$workdir/$name.status" ]; then
-    read -r rc <"$workdir/$name.status"
+    read -r rc elapsed <"$workdir/$name.status"
   fi
+  suffix=${elapsed:+  ($elapsed ms)}
   if [ "$rc" = 0 ]; then
     passed=$((passed + 1))
-    printf 'ok   %s\n' "$name"
+    printf 'ok   %s%s\n' "$name" "$suffix"
   else
     failed=$((failed + 1))
-    printf 'FAIL %s\n' "$name"
+    printf 'FAIL %s%s\n' "$name" "$suffix"
     sed 's/^/     /' "$workdir/$name.log"
+  fi
+  if [ -n "$elapsed" ]; then
+    slowest="$slowest$elapsed $name
+"
   fi
 done
 
 printf '\n%s passed, %s failed (shell: %s, jobs: %s)\n' \
   "$passed" "$failed" "$shell_under_test" "$workers"
+if [ -n "$timing" ]; then
+  printf '\nslowest:\n'
+  printf '%s' "$slowest" | sort -rn | sed 5q | while read -r t n; do
+    printf '%8s ms  %s\n' "$t" "$n"
+  done
+fi
 if [ "$failed" -eq 0 ]; then
   exit 0
 fi
