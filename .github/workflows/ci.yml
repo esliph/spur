@@ -11,7 +11,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install shellcheck
-        run: sudo apt-get update && sudo apt-get install -y shellcheck
+        # A pinned release, not the apt package: the version decides which
+        # codes are reported, and the disable comments must name them.
+        run: |
+          curl -fsSL "https://github.com/koalaman/shellcheck/releases/download/v${SHELLCHECK_VERSION}/shellcheck-v${SHELLCHECK_VERSION}.linux.x86_64.tar.xz" | tar -xJ
+          sudo mv "shellcheck-v${SHELLCHECK_VERSION}/shellcheck" /usr/local/bin/
+          shellcheck --version
+        env:
+          SHELLCHECK_VERSION: 0.11.0
       - name: Lint
         run: shellcheck -s sh spur tests/run.sh tests/lib.sh tests/common.sh tests/bench/*.sh tests/cases/*.sh
 
