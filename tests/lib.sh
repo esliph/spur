@@ -92,3 +92,12 @@ assert_stderr_lacks() {
 assert_stderr_matches() {
   grep -qE -- "$1" stderr || fail "stderr does not match: $1"
 }
+
+# fake_suite -- copy the harness and the runner into ./fake, with empty
+# tests/cases and tests/bench for the case to fill. The copied harness finds
+# its root through $0, so it runs the fake suite. Only harness- cases use it.
+fake_suite() {
+  mkdir -p fake/tests/cases fake/tests/bench
+  cp "$root/spur" fake/spur
+  cp "$root/tests/run.sh" "$root/tests/lib.sh" "$root/tests/common.sh" fake/tests/
+}
