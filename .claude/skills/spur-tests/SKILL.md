@@ -73,6 +73,7 @@ sh tests/run.sh nonsense               # selects nothing -> exit 64, never a gre
 SPUR_TEST_SHELL=dash sh tests/run.sh   # the strict-POSIX check
 SPUR_TEST_JOBS=1 sh tests/run.sh       # one case at a time
 SPUR_TEST_TIMES=1 sh tests/run.sh      # durations, and the five slowest
+SPUR_TEST_AWK="gawk --posix" sh tests/run.sh  # the awk the runner runs with
 ```
 
 The repository also drives all of this through itself, filter included. Read
@@ -89,9 +90,10 @@ Use the raw `sh tests/run.sh` form when you are debugging the runner itself.
 hide a broken suite.
 
 `SPUR_TEST_SHELL` picks the shell that executes **the runner**, not the shell
-executing `run.sh`. `SPUR_TEST_TMPDIR` (default `/tmp`) is where the per-case
-directories go — never leave a `Spurfile` lying around in it, because
-`discovery-not-found` asserts that no ancestor of the case dir has one.
+executing `run.sh`. `SPUR_TEST_AWK` picks the awk it parses with, through a
+wrapper the harness puts first on `PATH`. `SPUR_TEST_TMPDIR` (default
+`/tmp`) is where the per-case directories go — never leave a `Spurfile`
+lying around in it, because `discovery-not-found` asserts that no ancestor of the case dir has one.
 
 ### The matrix, and the local trap
 

@@ -31,6 +31,15 @@ SPUR_TEST_SHELL=bash sh tests/run.sh
 ./spur test-all                        # every shell found locally
 ```
 
+The parser is an awk program, so the awk varies too. `SPUR_TEST_AWK` names
+the awk the runner runs with (words split on spaces, no quoting); the harness
+puts it first on `PATH`, for the runner and every `spur` a task starts:
+
+```sh
+SPUR_TEST_AWK="gawk --posix" sh tests/run.sh   # refuses gawk-only functions
+SPUR_TEST_AWK=mawk sh tests/run.sh
+```
+
 CI adds busybox ash (Alpine, via Docker) and `shellcheck -s sh`.
 
 ## Writing a case

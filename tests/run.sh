@@ -19,6 +19,9 @@
 #   SPUR_TEST_JOBS      number of workers (default: the number of CPUs);
 #                       1 runs the cases one at a time
 #   SPUR_TEST_TIMES     1 adds each case's duration and lists the five slowest
+#   SPUR_TEST_AWK       awk the runner runs with, words split on spaces and
+#                       no quoting: gawk --posix, mawk, busybox awk
+#                       (default: the awk on PATH)
 # shellcheck disable=SC2154  # $names, $count, $clock and $ms come from tests/common.sh
 
 case $0 in
@@ -51,6 +54,28 @@ else
   esac
 fi
 
+# SPUR_TEST_AWK: resolve its first word now, so a typo is a usage error
+# before any case runs; the wrapper is written once the work directory
+# exists.
+awk_cmd=${SPUR_TEST_AWK:-}
+awk_path=
+if [ -n "$awk_cmd" ]; then
+  # Split on spaces on purpose: the value is a command and its words.
+  # shellcheck disable=SC2086
+  set -- $awk_cmd
+  awk_path=$(command -v "$1" 2>/dev/null) || awk_path=
+  case $awk_path in
+    /*) ;;
+    */*) awk_path=$PWD/$awk_path ;;
+    *)
+      printf 'SPUR_TEST_AWK: cannot find %s\n' "$1" >&2
+      exit 64
+      ;;
+  esac
+  shift
+  awk_args=$*
+fi
+
 timing=
 if [ "${SPUR_TEST_TIMES:-}" = 1 ]; then
   detect_clock
@@ -64,9 +89,10 @@ fi
 # The runner exports its own state to child processes. When the suite is
 # started through spur itself (./spur test), that state would leak into every
 # case, so start from a clean slate. The harness's own controls go too: a
-# case that starts a harness gets the defaults unless it asks otherwise.
+# case that starts a harness gets the defaults unless it asks otherwise. The
+# awk chosen by SPUR_TEST_AWK stays chosen there, through PATH.
 unset SPUR_BIN SPUR_ROOT SPUR_INVOCATION_DIR SPUR_TASK SPUR_STACK \
-  SPUR_TEST_JOBS SPUR_TEST_TIMES
+  SPUR_TEST_JOBS SPUR_TEST_TIMES SPUR_TEST_AWK
 
 select_names "$root/tests/cases" "$filter"
 if [ "$count" -eq 0 ]; then
@@ -83,6 +109,18 @@ mkdir -p "$workdir" || {
   printf 'cannot create %s\n' "$workdir" >&2
   exit 70
 }
+
+# A script named awk, first on PATH, that execs the chosen awk by its
+# absolute path. A symlink would not carry the extra words, and under MSYS
+# (Git Bash) a copied binary no longer finds its DLLs.
+if [ -n "$awk_path" ]; then
+  mkdir "$workdir/.awk"
+  printf '#!/bin/sh\nexec '\''%s'\'' %s "$@"\n' "$awk_path" "$awk_args" \
+    >"$workdir/.awk/awk"
+  chmod +x "$workdir/.awk/awk"
+  PATH=$workdir/.awk:$PATH
+  export PATH
+fi
 
 # interrupt STATUS -- let each worker finish the case it is running and start
 # no other, wait for them, then exit with STATUS; the EXIT trap removes the
@@ -177,8 +215,8 @@ for name in $names; do
   fi
 done
 
-printf '\n%s passed, %s failed (shell: %s, jobs: %s)\n' \
-  "$passed" "$failed" "$shell_under_test" "$workers"
+printf '\n%s passed, %s failed (shell: %s, jobs: %s%s)\n' \
+  "$passed" "$failed" "$shell_under_test" "$workers" "${awk_cmd:+, awk: $awk_cmd}"
 if [ -n "$timing" ]; then
   printf '\nslowest:\n'
   printf '%s' "$slowest" | sort -rn | sed 5q | while read -r t n; do

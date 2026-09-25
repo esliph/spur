@@ -19,6 +19,7 @@ sh tests/run.sh parse-                 # no case has that name: every case conta
 SPUR_TEST_SHELL=dash sh tests/run.sh   # strictest shell; if it passes here it is POSIX
 SPUR_TEST_JOBS=1 sh tests/run.sh       # one case at a time
 SPUR_TEST_TIMES=1 sh tests/run.sh      # each case's duration, and the five slowest
+SPUR_TEST_AWK="gawk --posix" sh tests/run.sh  # the awk the runner runs with
 sh tests/bench/run.sh [name]           # benchmarks: numbers only, no baseline
 shellcheck -s sh spur tests/run.sh tests/lib.sh tests/common.sh tests/bench/*.sh tests/cases/*.sh
 ```
@@ -100,7 +101,8 @@ copy of the harnesses and the runner in `./fake`, for `harness-` cases). The
 or `capture` is invisible to them.
 
 `run.sh` unsets the `SPUR_*` variables before the cases run, its own
-`SPUR_TEST_JOBS` and `SPUR_TEST_TIMES` included, so running the suite through
+`SPUR_TEST_JOBS`, `SPUR_TEST_TIMES` and `SPUR_TEST_AWK` included (the chosen
+awk stays first on `PATH`), so running the suite through
 `./spur test` does not leak the outer invocation's state into cases.
 
 `tests/bench/run.sh` measures the runner. It selects scenarios in
