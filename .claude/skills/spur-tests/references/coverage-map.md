@@ -48,13 +48,14 @@ trailing ones (trimmed), and for a body containing a heredoc whose terminator
 is indented with it; the runner expands nothing; unknown task is 67 and
 suggests `spur --list`; `-n` or `-x` with no task is 64.
 
-**`exec-`** (10) — a task runs and prints; the exit code is propagated
+**`exec-`** (11) — a task runs and prints; the exit code is propagated
 unchanged (42 stays 42) and never confused with a runner code; `set -e` aborts
 the body; arguments after the task name pass through untouched, quoting
 preserved; `SPUR_TASK`, `SPUR_ROOT`, `SPUR_INVOCATION_DIR`, `SPUR_BIN` are
 exported correctly; tasks run from the Spurfile's directory, including under
 `-f`; `-` and `.` are legal in task names; stdin stays free for an interactive
-task; a failing command is labelled `spur <task>`.
+task; a failing command is labelled `spur <task>`; the runner works with only
+`sh`, `awk`, `dirname`, `basename` and `cat` on `PATH` (`exec-minimal-path`).
 
 **`chain-`** (5) — `spur other` inside a body works, forwards arguments, and
 works when the runner was invoked by a relative path from another directory;
@@ -73,8 +74,21 @@ is 67 for an unknown one, runs nothing (not even a `$(...)`), is 64 with `-l`,
 `-n` or `-x`, and passes on an empty Spurfile. Error wording varies by shell
 (busybox reports `line 0`), so the cases only pin the `spur <task>:` prefix.
 
-**`harness-`** (1) — exact name beats substring, substring selects a group,
-selecting nothing is 64.
+**`harness-`** (14, refreshed 2026-09-25) — exact name beats substring,
+substring selects a group, selecting nothing is 64
+(`harness-selects-by-name`); `has`/`lacks` match literally, `capture` reloads
+the output (`harness-helpers-literal-match`); parallel output is alphabetical
+and identical to a serial run, with the workers proven to overlap
+(`harness-parallel-keeps-order`); a failure prints its indented log and exits
+1 (`harness-failure-reported`); `SPUR_TEST_JOBS` validation and cap
+(`harness-jobs-invalid`); the work dir is removed on pass and fail, with a
+space in its path (`harness-cleans-workdir`); stdin is closed
+(`harness-case-stdin-closed`); TERM stops the workers and cleans up
+(`harness-interrupt-stops-workers`); timings with a clock, the notice
+without one, and no leak of the controls into cases (`harness-times`,
+`harness-times-without-clock`); the benchmark harness fails on a failing or
+measure-less scenario, refuses a bad filter, bad iterations and a missing
+clock (`harness-bench-*`).
 
 ## Confirmed gaps
 
@@ -140,14 +154,6 @@ grammar but only `-` and `.` are tested.
   repository's own `Spurfile`. The failure blames the case rather than the
   setting. Either document the constraint in `CONTRIBUTING.md` or have
   `run.sh` refuse a work directory that has a `Spurfile` above it.
-- **Stdin is inherited by every case.** A case that reads stdin without
-  supplying it would hang the suite, in CI too, with no timeout. Verified: the
-  whole suite passes with stdin closed, and `exec-stdin-is-free` still works
-  because it pipes its input explicitly, so `</dev/null` on the case subshell
-  in `run.sh` would turn a hang into an immediate, readable failure.
-- **Reporting which cases ran.** A green run prints one `ok` per case and a
-  total, which is enough. Resist adding timing, colours or parallelism: the
-  harness is ~80 lines and its readability is a feature.
 
 ## Matrix gaps
 

@@ -13,7 +13,7 @@ jobs:
       - name: Install shellcheck
         run: sudo apt-get update && sudo apt-get install -y shellcheck
       - name: Lint
-        run: shellcheck -s sh spur tests/run.sh tests/lib.sh tests/cases/*.sh
+        run: shellcheck -s sh spur tests/run.sh tests/lib.sh tests/common.sh tests/bench/*.sh tests/cases/*.sh
 
   shells:
     name: tests (${{ matrix.shell }})
@@ -38,3 +38,14 @@ jobs:
         run: |
           docker run --rm -v "$PWD:/work" -w /work alpine:3.20 \
             sh -c "apk add --no-cache diffutils >/dev/null && sh tests/run.sh"
+
+  bench:
+    name: bench smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dash
+        run: sudo apt-get update && sudo apt-get install -y dash
+      - name: Run every scenario once
+        # Keeps the scenarios from rotting; the numbers are not checked.
+        run: SPUR_BENCH_ITERATIONS=1 SPUR_TEST_SHELL=dash sh tests/bench/run.sh

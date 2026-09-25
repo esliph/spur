@@ -41,7 +41,9 @@ exact-name-then-substring selection), and the coverage snapshot in
 
 | Path | What it is |
 |---|---|
-| `tests/run.sh` | The harness: picks cases, runs each in its own temp dir, prints `ok` / `FAIL`. |
+| `tests/run.sh` | The harness: picks cases, runs them in parallel workers, each in its own temp dir, and prints `ok` / `FAIL` in alphabetical order. |
+| `tests/common.sh` | Case selection and the clock, shared by both harnesses. |
+| `tests/bench/` | The benchmark harness (`run.sh`) and its scenarios. |
 | `tests/lib.sh` | Assertion helpers, sourced into every case. |
 | `tests/cases/<group>-<what>.sh` | One case each. Plain sh, no framework. |
 | `Spurfile` | The repo runs itself; the tasks that drive the suite are listed there. |
@@ -55,9 +57,11 @@ written in the same sh the runner is written in.
 **Two different dependency budgets.** The repository states the diet the
 *runner* is on, and it is a strict one. What it does not say, and what gets
 over-applied, is that the *harness* is exempt: `tests/` is ordinary tooling
-and freely uses `grep`, `sed`, `diff`, `basename`, `mkdir`, `rm`.
+and freely uses `grep`, `sed`, `diff`, `sort`, `mkdir`, `rm`.
 `assert_stdout_is` is built on `diff -u` on purpose. A case rewritten to obey
 the runner's diet is a case made worse for no reason.
+The runner's diet is pinned by `exec-minimal-path`, which runs it with only
+`sh`, `awk`, `dirname`, `basename` and `cat` on `PATH`.
 
 ## Running
 
@@ -67,6 +71,8 @@ sh tests/run.sh discovery-flag-f       # exactly that case
 sh tests/run.sh parse-                 # no case has that name: substring filter (a group)
 sh tests/run.sh nonsense               # selects nothing -> exit 64, never a green empty run
 SPUR_TEST_SHELL=dash sh tests/run.sh   # the strict-POSIX check
+SPUR_TEST_JOBS=1 sh tests/run.sh       # one case at a time
+SPUR_TEST_TIMES=1 sh tests/run.sh      # durations, and the five slowest
 ```
 
 The repository also drives all of this through itself, filter included. Read
@@ -133,8 +139,9 @@ new prefix is a real decision, not a formality — make it only when a case
 honestly fits none of the existing ones, and say that you did, because the
 prefix is the whole reason `sh tests/run.sh <group>-` is worth typing.
 
-Cases run in alphabetical order, each in its own directory, each in a
-subshell. Order carries no meaning and no case may depend on another.
+Cases run in parallel workers, each in its own directory, each in a subshell
+with stdin closed; the report is alphabetical, and `SPUR_TEST_JOBS=1` runs
+them one at a time. Order carries no meaning and no case may depend on another.
 
 A case is a straight-line script — no test functions, no setup/teardown:
 
@@ -193,11 +200,17 @@ than it looks:
 
 ### When a case needs to bypass `run`
 
-Some cases must invoke the runner themselves — piping stdin
-(`exec-stdin-is-free`), calling it through a relative path
-(`chain-call-relative-path`), or starting the harness again
-(`harness-selects-by-name`). Those set `status=$?` by hand, which shellcheck
-cannot see through, so they carry a justified disable at the top:
+Some cases must invoke something other than `run` — a vendored copy of the
+runner through a relative path (`chain-call-relative-path`), or the harness
+itself (`harness-selects-by-name`, and every case that uses `fake_suite`).
+Those go through `capture CMD...`, which fills the same files and variables
+as `run`. The `has`/`lacks` assertions read `$stdout` and `$stderr`, not the
+files, so a command run by hand would leave them asserting on stale output.
+
+The one exception is a pipe into the runner (`exec-stdin-is-free`): a
+pipeline would run `capture` in a subshell and lose `$status`, so that case
+sets `status=$?` by hand and asserts through files only. Such a case carries
+a justified disable at the top:
 
 ```sh
 # $runner and $shell_under_test come from tests/run.sh; $status is read by
@@ -208,8 +221,11 @@ cannot see through, so they carry a justified disable at the top:
 Every `# shellcheck disable=` in this repository explains itself on the line
 above. Keep that habit; a bare disable is indistinguishable from a bug.
 
-If a case starts the harness again, it may only select cases that do *not*
-themselves start the harness — otherwise the suite recurses.
+If a case starts the real harness again, it may only select cases that do
+*not* themselves start a harness — otherwise the suite recurses. Cases that
+need a harness to run arbitrary cases use `fake_suite` and write their own.
+A case ends with its last command's status: finish with
+`if [ ... ]; then fail ...; fi`, never with `[ ... ] && fail`.
 
 ## When the runner changes
 
@@ -245,6 +261,16 @@ first after a refactor that "changes nothing":
 When a change breaks one of these and the documents still promise it, the case
 is right and the change is wrong. That one is not a judgement call to defer:
 the promise is on paper, and the case is how it stays true.
+
+## Benchmarks
+
+`sh tests/bench/run.sh [name]` times the runner, scenario by scenario, and
+prints numbers only. A scenario is `tests/bench/<name>.sh`, a straight-line
+script that prepares its directory and calls `measure ARGS...` once; `measure`
+warms up, then runs the runner `SPUR_BENCH_ITERATIONS` times. Benchmarks
+guide work on the runner's speed; they pin nothing, and a slow number is
+never a failing test. They need `date +%s%N` in nanoseconds (not macOS, not
+busybox in Alpine).
 
 ## Proposing improvements
 
