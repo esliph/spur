@@ -10,6 +10,7 @@
 select_names() {
   names=
   count=0
+  case $2 in */*) return 0 ;; esac # a filter is a name, never a path
   if [ -n "$2" ] && [ "$2" != "${3:-}" ] && [ -f "$1/$2.sh" ]; then
     names=$2
     count=1

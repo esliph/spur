@@ -88,10 +88,13 @@ mkdir -p "$workdir" || {
 # no other, wait for them, then exit with STATUS; the EXIT trap removes the
 # work directory. Workers are asynchronous lists, which ignore SIGINT in a
 # non-interactive shell, so a Ctrl-C reaches only this process and the stop
-# has to be passed on. A second Ctrl-C stops waiting.
+# has to be passed on. A second INT or TERM stops waiting: the workers are
+# killed, since one left running would go on to the next case in a work
+# directory that is about to be removed.
 # shellcheck disable=SC2317,SC2329  # invoked through the INT and TERM traps
 interrupt() {
-  trap 'exit 130' INT
+  # shellcheck disable=SC2064  # $pids is meant to be expanded now
+  trap "kill $pids 2>/dev/null; exit 130" INT TERM
   : >"$workdir/.stop"
   wait
   exit "$1"
@@ -131,7 +134,7 @@ run_worker() {
   # Case names are file names: no spaces, no glob characters.
   # shellcheck disable=SC2086
   for name in $names; do
-    [ ! -f "$workdir/.stop" ] || return 0
+    [ -d "$workdir" ] && [ ! -f "$workdir/.stop" ] || return 0
     if [ $((i % workers)) -eq "$1" ]; then
       run_case "$name"
     fi
@@ -139,9 +142,11 @@ run_worker() {
   done
 }
 
+pids=
 k=0
 while [ "$k" -lt "$workers" ]; do
   run_worker "$k" &
+  pids="$pids $!"
   k=$((k + 1))
 done
 wait
