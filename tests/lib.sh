@@ -100,4 +100,5 @@ fake_suite() {
   mkdir -p fake/tests/cases fake/tests/bench
   cp "$root/spur" fake/spur
   cp "$root/tests/run.sh" "$root/tests/lib.sh" "$root/tests/common.sh" fake/tests/
+  cp "$root/tests/bench/run.sh" fake/tests/bench/
 }
