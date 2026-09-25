@@ -155,6 +155,33 @@ grammar but only `-` and `.` are tested.
   setting. Either document the constraint in `CONTRIBUTING.md` or have
   `run.sh` refuse a work directory that has a `Spurfile` above it.
 
+## Open: measuring the suite's strength
+
+Deferred on 2026-09-25, to be designed (spec first) in a later session. The
+suite has no measure of how much it would catch; these two would give it one
+without adding a dependency:
+
+- **Diagnostic coverage, automated.** The check described under "Auditing it
+  yourself" (every `err("...")` in `AWK_PARSER` and every `die` message is
+  asserted by some case) is still done by hand. Scripted, it would turn a new
+  unasserted branch into a red run. The extraction must trim what the
+  message builds at run time: a naive `die [0-9]* "[^"$]*` keeps the space
+  before `$PWD` in `no Spurfile found in $PWD`, and then reports
+  `discovery-not-found`, which does assert it, as a gap.
+- **Light mutation testing.** A script that applies `sed` mutations to a
+  copy of `spur` (flip a comparison, drop a `die`, change an exit code) and
+  requires the suite to go red for each one. That is the "break the line in
+  a throwaway copy" check from the skill, run for the whole file, and it
+  measures the suite's strength where line coverage cannot.
+
+Weighed against a survey of shell-testing practice and turned down, so they
+need not be raised again: bats or ShellSpec (a framework, against the
+zero-dependency rule), a source guard for unit tests (POSIX sh has no
+`BASH_SOURCE`, and `-n`, `--list` and `--names` already expose each stage),
+kcov (bash, zsh and ksh only, and blind to the awk parser), TAP or JUnit
+output, and shfmt or checkbashisms (`shellcheck -s sh` and the matrix
+already catch bashisms).
+
 ## The matrix (closed 2026-09-25)
 
 The awk used to vary only by accident. It is now an axis of its own:
