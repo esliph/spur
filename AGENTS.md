@@ -109,8 +109,9 @@ script.
 - Inside `AWK_PARSER`: strict POSIX awk, and **never a single quote** — the
   program lives inside a single-quoted shell string and a quote would terminate
   it.
-- The runner may depend on `sh` and `awk` only. No `mktemp`, no `stat`, no
-  temporary files.
+- The runner may depend on `sh`, `awk` and the basic POSIX utilities
+  `dirname`, `basename` and `cat`, nothing else; `exec-minimal-path` holds it
+  to that. No `mktemp`, no `stat`, no temporary files.
 - Everything in this repository is written in English, including commits and
   comments.
 - Every behavior change comes with a test.

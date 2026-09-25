@@ -53,8 +53,9 @@ a private directory, with these helpers in scope:
 - Strict POSIX sh. No bashisms. `shellcheck -s sh` must pass clean.
 - Strict POSIX awk inside `AWK_PARSER`, and **never a single quote**: the
   program lives inside a single-quoted shell string.
-- The runner depends on `sh` and `awk` only. No `mktemp`, no `stat`, no
-  temporary files.
+- The runner depends on `sh`, `awk` and the basic POSIX utilities `dirname`,
+  `basename` and `cat`, nothing else; `exec-minimal-path` holds it to that.
+  No `mktemp`, no `stat`, no temporary files.
 - Everything in this repository is written in English.
 - Commits follow Conventional Commits, in English like the rest: a type and an
   optional scope, as in `feat(parser):` or `test:`. `git log` is the
