@@ -122,20 +122,55 @@ if [ -n "$awk_path" ]; then
   export PATH
 fi
 
+# descendants PID... -- print the PIDs of every process below the given ones.
+# POSIX ps takes -A -o; busybox ps lists everything without -A, and the ps of
+# MSYS (Git Bash) takes neither but prints PID and PPID first, after a status
+# letter on some lines.
+# shellcheck disable=SC2317,SC2329  # invoked through stop_now
+descendants() {
+  { ps -A -o pid= -o ppid= || ps -o pid= -o ppid= || ps -e; } 2>/dev/null |
+    awk -v roots="$*" '
+      { i = ($1 ~ /^[0-9]+$/) ? 1 : 2
+        if ($i ~ /^[0-9]+$/ && $(i + 1) ~ /^[0-9]+$/) parent[$i] = $(i + 1) }
+      END {
+        n = split(roots, r, " ")
+        for (k = 1; k <= n; k++) below[r[k]] = 1
+        do {
+          more = 0
+          for (p in parent)
+            if (!(p in below) && (parent[p] in below)) { below[p] = 1; more = 1; print p }
+        } while (more)
+      }'
+}
+
+# stop_now STATUS -- the second INT or TERM: stop the workers and everything
+# they started, then exit with STATUS. A case is an asynchronous list too, so
+# it ignores SIGINT, and a Ctrl-C would never reach a case that hangs; TERM
+# does. Killing only the workers would orphan the case in progress, which
+# would go on running in a work directory that is being removed.
+# shellcheck disable=SC2317,SC2329  # invoked through the nested INT and TERM traps
+stop_now() {
+  # $pids and the output of descendants are PIDs, numbers split into one
+  # word each on purpose.
+  # shellcheck disable=SC2046,SC2086
+  kill $(descendants $pids) $pids 2>/dev/null
+  wait
+  cleanup
+  exit "$1"
+}
+
 # interrupt STATUS -- let each worker finish the case it is running and start
 # no other, wait for them, then exit with STATUS; the EXIT trap removes the
 # work directory. Workers are asynchronous lists, which ignore SIGINT in a
 # non-interactive shell, so a Ctrl-C reaches only this process and the stop
-# has to be passed on. A second INT or TERM stops waiting: the workers are
-# killed, since one left running would go on to the next case in a work
-# directory that is about to be removed. That trap calls cleanup itself: bash
-# 3.2 (sh on macOS) skips the EXIT trap on an exit from a trap nested in
-# another, and it holds the second signal until the wait is over, so there
-# the workers finish their case before they stop.
+# has to be passed on. A second INT or TERM stops waiting (stop_now). That
+# trap calls cleanup itself: bash 3.2 (sh on macOS) skips the EXIT trap on an
+# exit from a trap nested in another, and it holds the second signal until
+# the wait is over, so there the workers finish their case before they stop.
 # shellcheck disable=SC2317,SC2329  # invoked through the INT and TERM traps
 interrupt() {
-  # shellcheck disable=SC2064  # $pids is meant to be expanded now
-  trap "kill $pids 2>/dev/null; cleanup; exit 130" INT TERM
+  trap 'stop_now 130' INT
+  trap 'stop_now 143' TERM
   : >"$workdir/.stop"
   wait
   exit "$1"
