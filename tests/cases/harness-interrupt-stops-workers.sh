@@ -18,15 +18,10 @@ mkdir flags tmp
 FLAGS=$PWD/flags SPUR_TEST_TMPDIR=$PWD/tmp SPUR_TEST_JOBS=1 \
   "$shell_under_test" fake/tests/run.sh >stdout 2>stderr &
 pid=$!
-tries=0
-until [ -f flags/a-started ]; do
-  tries=$((tries + 1))
-  if [ "$tries" -gt 20 ]; then
-    kill "$pid"
-    fail "a-slow never started"
-  fi
-  sleep 1
-done
+wait_for flags/a-started || {
+  kill "$pid"
+  fail "a-slow never started"
+}
 kill -TERM "$pid"
 wait "$pid"
 status=$?

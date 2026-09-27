@@ -96,8 +96,10 @@ its own temp dir under `${SPUR_TEST_TMPDIR:-/tmp}`, with stdin closed and
 and `$stderr`, and `$status`), `capture CMD...` (the same for any other
 command: the harness, a vendored copy of the runner), `assert_status`,
 `assert_stdout_is` (byte-exact, heredoc),
-`assert_{stdout,stderr}_{has,lacks,matches}`, `fail`, and `fake_suite` (a
-copy of the harnesses and the runner in `./fake`, for `harness-` cases). The
+`assert_{stdout,stderr}_{has,lacks,matches}`, `fail`, `wait_for FILE
+[SECONDS]` (polls until a file a background process writes exists), and
+`fake_suite` (a copy of the harnesses and the runner in `./fake`, for
+`harness-` cases). The
 `has`/`lacks` assertions read the variables, so a command run without `run`
 or `capture` is invisible to them.
 

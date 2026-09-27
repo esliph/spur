@@ -12,12 +12,7 @@ sleep 2
 : >"$FLAGS/a-done"
 EOT
 cat >fake/tests/cases/b-one.sh <<'EOT'
-i=0
-until [ -f "$FLAGS/a-started" ]; do
-  i=$((i + 1))
-  [ "$i" -le 5 ] || exit 1
-  sleep 1
-done
+wait_for "$FLAGS/a-started" 5 || exit 1
 if [ -f "$FLAGS/a-done" ]; then echo serial; else echo parallel; fi >"$FLAGS/b-saw"
 EOT
 for n in c-two d-three e-four f-five; do

@@ -44,6 +44,17 @@ capture() {
   return 0
 }
 
+# wait_for FILE [SECONDS] -- wait until FILE exists, polling once a second, for
+# at most SECONDS (default 20). Returns 1 when it never appears.
+wait_for() {
+  _tries=0
+  until [ -e "$1" ]; do
+    _tries=$((_tries + 1))
+    [ "$_tries" -le "${2:-20}" ] || return 1
+    sleep 1
+  done
+}
+
 # Run the runner under test; capture stdout, stderr and the exit status.
 run() { capture "$shell_under_test" "$runner" "$@"; }
 

@@ -58,6 +58,7 @@ a private directory, with these helpers in scope:
 | `run ARGS...` | runs the runner; fills the files `stdout` and `stderr`, the variables `$stdout` and `$stderr`, and `$status` |
 | `capture CMD...` | the same for any command (the harness, a vendored copy of the runner) |
 | `fake_suite` | copies the harnesses and the runner into `./fake`, with empty `tests/cases` and `tests/bench`; for `harness-` cases |
+| `wait_for FILE [SECONDS]` | polls once a second until FILE exists (default 20 s); fails with 1 when it never does |
 | `assert_status N` | exit status |
 | `assert_stdout_is` | exact match against a heredoc on stdin |
 | `assert_stdout_has TEXT` / `assert_stderr_has TEXT` | fixed-string match |
