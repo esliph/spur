@@ -141,34 +141,37 @@ descendants() {
 # they started, then exit with STATUS. A case is an asynchronous list too, so
 # it ignores SIGINT, and a Ctrl-C would never reach a case that hangs; TERM
 # does. Killing only the workers would orphan the case in progress, which
-# would go on running in a work directory that is being removed.
-# shellcheck disable=SC2317,SC2329  # invoked through the nested INT and TERM traps
+# would go on running in a work directory that is being removed. The EXIT
+# trap removes the work directory.
+# shellcheck disable=SC2317,SC2329  # invoked through the INT and TERM traps set by interrupt
 stop_now() {
   # $pids and the output of descendants are PIDs, numbers split into one
   # word each on purpose.
   # shellcheck disable=SC2046,SC2086
   kill $(descendants $pids) $pids 2>/dev/null
   wait
-  cleanup
   exit "$1"
 }
 
-# interrupt STATUS -- let each worker finish the case it is running and start
-# no other, wait for them, then exit with STATUS; the EXIT trap removes the
-# work directory. Workers are asynchronous lists, which ignore SIGINT in a
-# non-interactive shell, so a Ctrl-C reaches only this process and the stop
-# has to be passed on. A second INT or TERM stops waiting (stop_now). That
-# trap calls cleanup itself: bash 3.2 (sh on macOS) skips the EXIT trap on an
-# exit from a trap nested in another, and it holds the second signal until
-# the wait is over, so there the workers finish their case before they stop.
+# interrupt STATUS -- the first INT or TERM: tell each worker to finish the
+# case it is running and start no other, and exit with STATUS once they have
+# (after the wait below). Workers are asynchronous lists, which ignore SIGINT
+# in a non-interactive shell, so a Ctrl-C reaches only this process and the
+# stop has to be passed on. A second INT or TERM stops waiting (stop_now).
+#
+# The trap returns at once and the waiting happens outside it: bash 3.2 (sh
+# on macOS) ignores a signal that arrives while the trap for that same
+# signal is running, so a second TERM sent during a wait inside the trap
+# would never be seen. Returning also keeps stop_now from running nested in
+# this trap, where bash 3.2 would skip the EXIT trap on its exit.
 # shellcheck disable=SC2317,SC2329  # invoked through the INT and TERM traps
 interrupt() {
+  stop_status=$1
   trap 'stop_now 130' INT
   trap 'stop_now 143' TERM
   : >"$workdir/.stop"
-  wait
-  exit "$1"
 }
+stop_status=
 trap 'interrupt 130' INT
 trap 'interrupt 143' TERM
 
@@ -219,7 +222,11 @@ while [ "$k" -lt "$workers" ]; do
   pids="$pids $!"
   k=$((k + 1))
 done
-wait
+# wait with no operand returns 0 once every worker has exited, and more than
+# 128 when a trapped signal cuts it short; then the workers are still
+# running, so wait again.
+until wait; do :; done
+[ -z "$stop_status" ] || exit "$stop_status"
 
 passed=0
 failed=0
