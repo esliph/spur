@@ -69,7 +69,7 @@ work the way they do in a script, and `set -e` aborts on the first failure.
 - **The runner expands nothing.** `$IMAGE`, `$(date)`, `${x:-y}` and `$$`
 reach the shell byte for byte. There is no template layer to escape, so
 there is nothing to learn beyond the shell you already know.
-- **A scope you can read in an afternoon.** About 330 lines of sh with the
+- **A scope you can read in an afternoon.** About 550 lines of sh with the
 parser included. When it does something surprising, the source is right
 there and it is the same file that was installed.
 
@@ -161,7 +161,7 @@ git add spur Spurfile && git commit -m "chore: vendor spur"
 The runner is one file with no dependencies beyond `sh`, `awk` and the basic
 POSIX utilities `dirname`, `basename` and `cat`, so
 committing it is not the same kind of decision as committing a binary: it is
-about 330 lines of readable shell, it diffs, and it is the same file on every
+about 550 lines of readable shell, it diffs, and it is the same file on every
 platform. From then on the tasks run with no install step at all:
 
 ```console
