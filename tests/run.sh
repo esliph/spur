@@ -37,16 +37,10 @@ workdir=${SPUR_TEST_TMPDIR:-/tmp}/spur-tests.$$
 # shellcheck source=tests/common.sh
 . "$root/tests/common.sh"
 
-# SPUR_TEST_JOBS is a positive integer; empty means unset. Leading zeros are
-# refused, because $((...)) reads 010 as octal.
+# SPUR_TEST_JOBS is a positive integer; empty means unset.
 if [ -n "${SPUR_TEST_JOBS:-}" ]; then
   workers=$SPUR_TEST_JOBS
-  case $workers in
-    *[!0-9]* | 0*)
-      printf 'SPUR_TEST_JOBS must be a positive integer, got: %s\n' "$workers" >&2
-      exit 64
-      ;;
-  esac
+  positive_int SPUR_TEST_JOBS "$workers"
 else
   workers=$(getconf _NPROCESSORS_ONLN 2>/dev/null)
   case $workers in

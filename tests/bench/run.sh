@@ -44,14 +44,8 @@ workdir=${SPUR_TEST_TMPDIR:-/tmp}/spur-bench.$$
 # shellcheck source=tests/common.sh
 . "$root/tests/common.sh"
 
-# A positive integer; leading zeros are refused, as for SPUR_TEST_JOBS.
 iterations=${SPUR_BENCH_ITERATIONS:-10}
-case $iterations in
-  *[!0-9]* | 0*)
-    printf 'SPUR_BENCH_ITERATIONS must be a positive integer, got: %s\n' "$iterations" >&2
-    exit 64
-    ;;
-esac
+positive_int SPUR_BENCH_ITERATIONS "$iterations"
 
 unset SPUR_BIN SPUR_ROOT SPUR_INVOCATION_DIR SPUR_TASK SPUR_STACK
 
@@ -128,6 +122,7 @@ for name in $names; do
 done
 
 failed=0
+# Scenario names are file names: no spaces, no glob characters.
 # shellcheck disable=SC2086
 for name in $names; do
   bench_result=$workdir/$name.result

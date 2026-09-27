@@ -30,6 +30,17 @@ select_names() {
   done
 }
 
+# positive_int NAME VALUE -- exit 64 unless VALUE is a positive integer.
+# Leading zeros are refused, because $((...)) reads 010 as octal.
+positive_int() {
+  case $2 in
+    '' | *[!0-9]* | 0*)
+      printf '%s must be a positive integer, got: %s\n' "$1" "$2" >&2
+      exit 64
+      ;;
+  esac
+}
+
 # detect_clock -- set $clock to 1 when `date +%s%N` prints nanoseconds since
 # the epoch. GNU date does; macOS prints a literal N; the busybox date in
 # Alpine 3.20 prints nothing for %N, which leaves whole seconds that look
