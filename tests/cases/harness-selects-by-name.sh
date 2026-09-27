@@ -15,7 +15,11 @@ assert_stdout_has '1 passed, 0 failed'
 harness discovery-flag-f-
 assert_status 0
 assert_stdout_has 'ok   discovery-flag-f-missing'
-assert_stdout_lacks 'ok   discovery-flag-f '
+# discovery-flag-f does not contain "discovery-flag-f-", so the filter leaves
+# it out; its report line would end right after the name.
+if grep -qx 'ok   discovery-flag-f' stdout; then
+  fail "the substring filter selected discovery-flag-f"
+fi
 
 harness cli-version
 assert_status 0
