@@ -259,7 +259,7 @@ PARSER_OUT=
 # so that the caller can exit on failure.
 run_parser() {
   PARSER_OUT=$(
-    awk -v mode="$1" -v want="$2" -v file="$(basename "$SPUR_FILE")" \
+    awk -v mode="$1" -v want="$2" -v file="${SPUR_FILE##*/}" \
       "$AWK_PARSER" "$SPUR_FILE"
   )
 }
@@ -395,20 +395,28 @@ cd "$SPUR_ROOT" || die 66 "cannot enter $SPUR_ROOT"
 PRELUDE='set -e
 spur() { "$SPUR_BIN" "$@"; }'
 
+NL='
+'
 script=
+head=
+
+# build_head -- leaves the prelude, the preamble and the trace setup in the
+# global "head", the part of the script that is the same for every task.
+build_head() {
+  run_parser preamble "" || parser_error $?
+  head=$PRELUDE
+  [ -z "$PARSER_OUT" ] || head=$head$NL$PARSER_OUT
+  if [ -n "$trace_opt" ]; then
+    head=$head$NL"PS4='\$ '"$NL'set -x'
+  fi
+}
 
 # build_script TASK -- leaves the assembled script in the global "script".
+# Needs build_head first.
 build_script() {
   run_parser body "$1" || parser_error $?
-  body=$PARSER_OUT
-  run_parser preamble "" || parser_error $?
-  preamble=$PARSER_OUT
-
-  script=$(printf '%s\n%s\n' "$PRELUDE" "$preamble")
-  if [ -n "$trace_opt" ]; then
-    script=$(printf "%s\nPS4='\$ '\nset -x\n" "$script")
-  fi
-  script=$(printf '%s\n%s\n' "$script" "$body")
+  script=$head
+  [ -z "$PARSER_OUT" ] || script=$script$NL$PARSER_OUT
 }
 
 # ------------------------------------------------------------------ checking
@@ -429,9 +437,8 @@ check_task() {
 # preamble is reported once instead of once per task; then TASK, or every
 # task in file order. Exits 65 if anything fails to parse.
 check_tasks() {
-  run_parser preamble "" || parser_error $?
-  sh -n -c "$(printf '%s\n%s\n' "$PRELUDE" "$PARSER_OUT")" "spur (preamble)" ||
-    exit 65
+  build_head
+  sh -n -c "$head" "spur (preamble)" || exit 65
   if [ -n "$1" ]; then
     check_task "$1"
   else
@@ -492,6 +499,7 @@ case " ${SPUR_STACK:-} " in
     ;;
 esac
 
+build_head
 build_script "$task"
 
 if [ -n "$dry_opt" ]; then
