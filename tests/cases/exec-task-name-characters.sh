@@ -4,6 +4,12 @@ db-reset: ## recreate the database
 
 docker.build:
   echo building
+
+unit_test:
+  echo testing
+
+step2:
+  echo stepping
 EOF
 
 run db-reset
@@ -16,4 +22,16 @@ run docker.build
 assert_status 0
 assert_stdout_is <<'EOF'
 building
+EOF
+
+run unit_test
+assert_status 0
+assert_stdout_is <<'EOF'
+testing
+EOF
+
+run step2
+assert_status 0
+assert_stdout_is <<'EOF'
+stepping
 EOF

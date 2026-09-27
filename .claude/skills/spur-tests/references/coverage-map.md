@@ -67,7 +67,7 @@ unchanged (42 stays 42) and never confused with a runner code; `set -e` aborts
 the body; arguments after the task name pass through untouched, quoting
 preserved; `SPUR_TASK`, `SPUR_ROOT`, `SPUR_INVOCATION_DIR`, `SPUR_BIN` are
 exported correctly; tasks run from the Spurfile's directory, including under
-`-f`; `-` and `.` are legal in task names; stdin stays free for an interactive
+`-f`; `-`, `.`, `_` and digits are legal in task names; stdin stays free for an interactive
 task; a failing command is labelled `spur <task>`; the runner works with only
 `sh`, `awk`, `dirname`, `basename` and `cat` on `PATH` (`exec-minimal-path`);
 `sh spur build` resolves `SPUR_BIN` to `./spur`, not to another `spur` on
@@ -130,9 +130,12 @@ in the suite was a single line, so a runner that dropped the preamble's blank
 lines (`spur:162`) or its indented lines (`spur:167`) passed all 104 cases.
 The assembly case catches both mutants; the exec case catches the second.
 
+On 2026-09-27 `exec-task-name-characters` also gained `unit_test` and
+`step2`, so digits and `_` in task names are pinned; each goes red against a
+runner whose header regex drops that character.
+
 No confirmed gap is open. Also unpinned, and probably fine to leave: three-level recursion renders
-`a -> b -> c -> a` correctly; digits and `_` in task names are allowed by the
-grammar but only `-` and `.` are tested; `die 66 "cannot enter $SPUR_ROOT"`
+`a -> b -> c -> a` correctly; `die 66 "cannot enter $SPUR_ROOT"`
 is the one diagnostic no case asserts (grep finds "cannot enter" in four
 cases, but those are the cases' own `fail` messages), and it is practically
 unreachable, since the `[ -f ]` before it already needs the directory.
