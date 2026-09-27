@@ -243,7 +243,9 @@ without one is still runnable.
 shown by `spur --describe <task>`. The block must touch the header: a blank
 line, a `#` comment or a `##@` in between detaches it. Each line loses `##`
 and one space; the rest, indentation included, is printed as written, and a
-bare `##` is a blank line. To the shell they are ordinary comments.
+bare `##` is a blank line. A line of three or more `#` (a `###` heading, a
+`##########` banner) is an ordinary comment, never part of the block. To
+the shell they are all ordinary comments.
 - `##@ Title` at column zero opens a section: `--list` groups the tasks that
 follow under that heading, in file order. Tasks before the first `##@`, or
 after a `##@` with no title, are listed under `Tasks`. A section with no

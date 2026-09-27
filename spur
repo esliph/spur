@@ -99,7 +99,8 @@ find_spurfile() {
 #   names     one task name per line, in file order
 #   body      the dedented body of the task named by "want"
 #   describe  the header description of "want", then the ## block right
-#             above its header, without the leading "##" and one space
+#             above its header, without the leading "##" and one space; a
+#             line of three or more # is an ordinary comment
 # Diagnostics go to stdout; the exit status carries the meaning (65 syntax,
 # 67 unknown task), because /dev/stderr is not portable across awks.
 # shellcheck disable=SC2016  # awk source, deliberately not expanded by sh
@@ -171,7 +172,7 @@ BEGIN { started = 0; in_body = 0; capturing = 0; found = 0; nb = 0; npre = 0; nt
     cursec = substr(line, 4); sub(/^[ \t]+/, "", cursec); sub(/[ \t]+$/, "", cursec)
     if (cursec == "") cursec = "Tasks"
   }
-  if (line ~ /^##/ && line !~ /^##@/) {
+  if (line ~ /^##([^#@]|$)/) {
     if (dend != NR - 1) nd = 0
     t = substr(line, 3); sub(/^ /, "", t)
     doc[++nd] = t; dend = NR
