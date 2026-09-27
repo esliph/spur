@@ -419,15 +419,28 @@ build_script() {
   [ -z "$PARSER_OUT" ] || script=$script$NL$PARSER_OUT
 }
 
+# sh_check LABEL SCRIPT -- parse SCRIPT with sh -n, which runs nothing,
+# labelling errors like a real run. sh -n accepts a heredoc that runs to the
+# end of the script, so the script is parsed again with a line that is a
+# syntax error after anything complete: when that passes too, the line was
+# swallowed by an open heredoc. Without "<<" there is no heredoc to check.
+sh_check() {
+  sh -n -c "$2" "$1" || return 1
+  case $2 in *'<<'*) ;; *) return 0 ;; esac
+  if sh -n -c "$2$NL)" "$1" 2>/dev/null; then
+    printf '%s: here-document not terminated\n' "$1" >&2
+    return 1
+  fi
+}
+
 # ------------------------------------------------------------------ checking
 
 check_failed=
 
-# check_task TASK -- syntax-check the assembled script with sh -n, which
-# parses without running anything. Errors are labelled like a real run.
+# check_task TASK -- syntax-check the assembled script of TASK.
 check_task() {
   build_script "$1"
-  if ! sh -n -c "$script" "spur $1"; then
+  if ! sh_check "spur $1" "$script"; then
     printf "spur: run 'spur -n %s' to see the assembled script\n" "$1" >&2
     check_failed=1
   fi
@@ -438,7 +451,7 @@ check_task() {
 # task in file order. Exits 65 if anything fails to parse.
 check_tasks() {
   build_head
-  sh -n -c "$head" "spur (preamble)" || exit 65
+  sh_check "spur (preamble)" "$head" || exit 65
   if [ -n "$1" ]; then
     check_task "$1"
   else
