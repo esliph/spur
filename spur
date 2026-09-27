@@ -130,11 +130,11 @@ function dist(a, b,   la, lb, i, j, c, v, d) {
   return d[la, lb]
 }
 # Report an unknown "want", with up to three close task names: within a
-# third of its length in edits, or starting with it. Closest first, then
-# file order.
+# third of its length in edits (none below three characters), or starting
+# with it. Closest first, then file order.
 function unknown(   w, lim, i, j, k, n, best, out, cand, cd, used) {
   printf "unknown task: %s\n", want
-  w = tolower(want); lim = int(length(w) / 3); if (lim < 1) lim = 1
+  w = tolower(want); lim = int(length(w) / 3)
   n = 0
   for (i = 1; i <= nt; i++) {
     k = dist(w, tolower(tname[i]))
