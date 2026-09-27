@@ -350,17 +350,30 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-if [ -n "$describe_opt" ] &&
-  [ -n "$list_opt$dry_opt$trace_opt$check_opt$names_opt" ]; then
-  die 64 "--describe cannot be combined with -l, -n, -x, --check or --names"
-fi
-
-if [ -n "$names_opt" ] && [ -n "$list_opt$dry_opt$trace_opt$check_opt" ]; then
-  die 64 "--names cannot be combined with -l, -n, -x or --check"
-fi
-
-if [ -n "$check_opt" ] && [ -n "$list_opt$dry_opt$trace_opt" ]; then
-  die 64 "--check cannot be combined with -l, -n or -x"
+# --check, --names and --describe each exclude -l, -n, -x and the modes
+# before them in that list. When several are given, the one furthest down
+# the list is reported. A new mode goes at the end of the loop.
+mode=
+seen=$list_opt$dry_opt$trace_opt
+flags='-l, -n'
+last=-x
+for m in check names describe; do
+  case $m in
+    check) on=$check_opt ;;
+    names) on=$names_opt ;;
+    describe) on=$describe_opt ;;
+  esac
+  if [ -n "$on" ]; then
+    mode=$m
+    conflict=$seen
+    others="$flags or $last"
+  fi
+  seen=$seen$on
+  flags="$flags, $last"
+  last=--$m
+done
+if [ -n "$mode" ] && [ -n "$conflict" ]; then
+  die 64 "--$mode cannot be combined with $others"
 fi
 
 if [ $# -gt 0 ]; then
