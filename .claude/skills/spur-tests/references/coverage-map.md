@@ -1,7 +1,7 @@
 # Coverage map
 
 A snapshot of what the suite pins and where it is thin, audited 2026-09-21
-against 48 cases and re-audited 2026-09-26 against 103. Cases get added;
+against 48 cases and re-audited 2026-09-26 against 103 (104 as of 2026-09-27). Cases get added;
 re-verify before acting on anything here.
 
 ## Auditing it yourself
@@ -30,7 +30,8 @@ unknown task: typos, transpositions and prefixes are suggested, case is
 ignored, at most three, closest first then file order, none when nothing is
 close, and the same suggestions in every mode.
 
-**`discovery-`** (9) — Spurfile found in `$PWD` and by ascending search;
+**`discovery-`** (10) — Spurfile found in `$PWD` and by ascending search,
+which stops at the nearest one (`discovery-nearest-wins`);
 lowercase `spurfile` accepted, with the case tolerating case-insensitive
 filesystems; nothing found is 66; `-C dir` works and a missing dir is 64;
 `-f file` works and a missing file is 66 (not 64 — the codes are distinct on
@@ -114,18 +115,18 @@ and no case pins it.
 The 2026-09-21 list had six. Four were closed on 2026-09-26, each case
 checked against a runner with the relevant line broken: `assembly-dedent-tabs`,
 `parse-crlf-spurfile`, `discovery-flag-C-with-f`, `assembly-empty-body`. One
-was dropped as vacuous: `assembly-comment-ends-body` (see below).
+was dropped as vacuous: `assembly-comment-ends-body` (see below). A fifth,
+`discovery-nearest-wins`, was closed on 2026-09-27, checked against a runner
+that keeps climbing and returns the topmost Spurfile (`discovery-find-ascending`
+stays green against that runner, which is why the case was needed). On a
+case-insensitive filesystem such a mutant must not let `spurfile` override a
+`Spurfile` in the same directory, or the old case fails for the wrong reason.
 
 ### 1. `exec-preamble-function` — low priority
 
 The preamble's purpose is shared setup, and a function defined there is
 callable from a body (verified). `trace-skips-preamble` defines one but never
 calls it. Only a variable assignment is actually exercised end to end.
-
-### 2. `discovery-nearest-wins`
-
-`discovery-find-ascending` has one Spurfile. Nothing pins that, with one in
-a parent and one in a child, the search stops at the nearest.
 
 Also unpinned, and probably fine to leave: three-level recursion renders
 `a -> b -> c -> a` correctly; digits and `_` in task names are allowed by the
