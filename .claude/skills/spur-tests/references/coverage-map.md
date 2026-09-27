@@ -1,7 +1,7 @@
 # Coverage map
 
 A snapshot of what the suite pins and where it is thin, audited 2026-09-21
-against 48 cases and re-audited 2026-09-26 against 103 (104 as of 2026-09-27). Cases get added;
+against 48 cases and re-audited 2026-09-26 against 103 (106 as of 2026-09-27). Cases get added;
 re-verify before acting on anything here.
 
 ## Auditing it yourself
@@ -53,14 +53,16 @@ between tasks is legal; duplicate task and make-style prerequisites are both
 line is a heredoc terminator left at column zero; an indented line after a
 comment has closed a body is `indented line does not belong to any task`.
 
-**`assembly-`** (9) — the exact generated script for a plain task, for a
-task with no body (prelude and preamble alone), for a dedented nested block
+**`assembly-`** (10) — the exact generated script for a plain task, for a
+task with no body (prelude and preamble alone), for a multi-line preamble
+kept verbatim, blank and indented lines included, for a dedented nested block
 (indented with spaces, and with tabs mixed with spaces), for a body with internal blank lines (kept) and
 trailing ones (trimmed), and for a body containing a heredoc whose terminator
 is indented with it; the runner expands nothing; unknown task is 67 and
 suggests `spur --list`; `-n` or `-x` with no task is 64.
 
-**`exec-`** (12) — a task runs and prints; the exit code is propagated
+**`exec-`** (13) — a task runs and prints; a multi-line function from the
+preamble is callable from a body; the exit code is propagated
 unchanged (42 stays 42) and never confused with a runner code; `set -e` aborts
 the body; arguments after the task name pass through untouched, quoting
 preserved; `SPUR_TASK`, `SPUR_ROOT`, `SPUR_INVOCATION_DIR`, `SPUR_BIN` are
@@ -122,13 +124,13 @@ stays green against that runner, which is why the case was needed). On a
 case-insensitive filesystem such a mutant must not let `spurfile` override a
 `Spurfile` in the same directory, or the old case fails for the wrong reason.
 
-### 1. `exec-preamble-function` — low priority
+The last listed gap was closed on 2026-09-27 by `assembly-preamble-verbatim`
+and `exec-preamble-function`. It was wider than first written: every preamble
+in the suite was a single line, so a runner that dropped the preamble's blank
+lines (`spur:162`) or its indented lines (`spur:167`) passed all 104 cases.
+The assembly case catches both mutants; the exec case catches the second.
 
-The preamble's purpose is shared setup, and a function defined there is
-callable from a body (verified). `trace-skips-preamble` defines one but never
-calls it. Only a variable assignment is actually exercised end to end.
-
-Also unpinned, and probably fine to leave: three-level recursion renders
+No confirmed gap is open. Also unpinned, and probably fine to leave: three-level recursion renders
 `a -> b -> c -> a` correctly; digits and `_` in task names are allowed by the
 grammar but only `-` and `.` are tested; `die 66 "cannot enter $SPUR_ROOT"`
 is the one diagnostic no case asserts (grep finds "cannot enter" in four
