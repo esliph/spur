@@ -1,7 +1,8 @@
 # Coverage map
 
 A snapshot of what the suite pins and where it is thin, audited 2026-09-21
-against 48 cases and re-audited 2026-09-26 against 103 (106 as of 2026-09-27). Cases get added;
+against 48 cases and re-audited 2026-09-26 against 103, refreshed 2026-09-27
+against 112 after a review of the branch. Cases get added;
 re-verify before acting on anything here.
 
 ## Auditing it yourself
@@ -22,13 +23,16 @@ each message. A message no case asserts is a branch no case reaches.
 
 ## What each group pins
 
-**`cli-`** (11) — `-h`/`--help` shows usage; `-v`/`--version` matches
+**`cli-`** (13) — `-h`/`--help` shows usage; `-v`/`--version` matches
 `spur N.N.N`; an unknown option is 64, and `-xn` is an unknown option, not
 `-x -n` (short flags deliberately do not group); `-f` and `-C` without an
 argument are 64. The `cli-suggest-*` cases pin the `did you mean` line of an
 unknown task: typos, transpositions and prefixes are suggested, case is
 ignored, at most three, closest first then file order, none when nothing is
-close, and the same suggestions in every mode.
+close, and the same suggestions in every mode. A name under three characters
+gets no edit-distance suggestion, only the tasks it starts
+(`cli-suggest-short-name`), and with `-f` or `-C` the `--list` hint names
+the same Spurfile by its path (`cli-suggest-hint-keeps-spurfile`).
 
 **`discovery-`** (10) — Spurfile found in `$PWD` and by ascending search,
 which stops at the nearest one (`discovery-nearest-wins`);
@@ -37,9 +41,10 @@ filesystems; nothing found is 66; `-C dir` works and a missing dir is 64;
 `-f file` works and a missing file is 66 (not 64 — the codes are distinct on
 purpose); `-C` applies before `-f` resolves (`discovery-flag-C-with-f`).
 
-**`parse-`** (28) — `##@` sections in `--list` (empty title, a section with
+**`parse-`** (29) — `##@` sections in `--list` (empty title, a section with
 no task, only at column zero); `--describe` (the `##` block right above the
-header, a detached block ignored, the first task after the preamble, no
+header, a detached block ignored, `###` headings and `####...` banners kept
+out of the block and detaching it, the first task after the preamble, no
 block, unknown task, no task, malformed file, combined flags); `--names`
 (file order, nothing for an empty file, a task name ignored, malformed file,
 combined flags); a Spurfile with CRLF endings runs as if it had LF
@@ -83,12 +88,17 @@ shell's quoting; the preamble is not traced, so preamble values do not leak to
 stderr; `-n` beats `-x` (the script is printed, including `set -x`, and
 nothing runs).
 
-**`check-`** (9, added 2026-09-24) — `--check` is silent on success, reports
+**`check-`** (12, added 2026-09-24) — `--check` is silent on success, reports
 every task that fails `sh -n` (labelled `spur <task>:` plus a hint to run
 `-n`), reports a broken preamble once and stops, checks a single named task,
 is 67 for an unknown one, runs nothing (not even a `$(...)`), is 64 with `-l`,
 `-n` or `-x`, and passes on an empty Spurfile. Error wording varies by shell
 (busybox reports `line 0`), so the cases only pin the `spur <task>:` prefix.
+An unterminated heredoc, which `sh -n` itself accepts, is 65 with
+`here-document not terminated`, in a task and in the preamble
+(`check-unterminated-heredoc*`); with `-f` or `-C` the `-n` hint names the
+same Spurfile, double-quoted when its path needs it
+(`check-hint-keeps-spurfile`).
 
 **`harness-`** (17, refreshed 2026-09-25) — exact name beats substring,
 substring selects a group, selecting nothing is 64
@@ -99,9 +109,12 @@ and identical to a serial run, with the workers proven to overlap
 1 (`harness-failure-reported`); `SPUR_TEST_JOBS` validation and cap
 (`harness-jobs-invalid`); the work dir is removed on pass and fail, with a
 space in its path (`harness-cleans-workdir`); stdin is closed
-(`harness-case-stdin-closed`); TERM stops the workers and cleans up
-(`harness-interrupt-stops-workers`), and so does a second signal
-(`harness-interrupt-twice-stops-workers`); a filter with a slash selects
+(`harness-case-stdin-closed`); TERM lets the case in progress finish, starts
+no other and cleans up (`harness-interrupt-stops-workers`); a second TERM
+exits 143 and kills the case in progress and everything it runs, not only
+the workers (`harness-interrupt-twice-stops-workers`, which waits for the
+harness's `.stop` file before the second signal instead of sleeping, and goes
+red against a harness that kills only the workers); a filter with a slash selects
 nothing (`harness-filter-with-slash`); `SPUR_TEST_AWK` picks the awk
 (`harness-awk-selects-implementation`); timings with a clock, the notice
 without one, and no leak of the controls into cases (`harness-times`,
@@ -205,6 +218,22 @@ The awk used to vary only by accident. It is now an axis of its own:
 bash 3.2 in the `macos-latest` job. Shells not yet in the matrix, if a gap
 ever shows: `posh` and `mksh` (stricter than dash on some points) and
 `yash`, all one `apt-get` away.
+
+A macOS-only failure in the harness can usually be reproduced without a Mac:
+the official `bash:3.2` image carries bash 3.2.57, the same as macOS, and
+`SPUR_TEST_SHELL=bash` makes the `harness-` cases start their fake harness
+with it. On 2026-09-27 that reproduced, and then confirmed the fix for, a
+failure of `harness-interrupt-twice-stops-workers` that only the macOS job
+saw: bash 3.2 ignores a signal that arrives while the trap for that same
+signal is still running.
+
+```sh
+docker run --rm -v "$PWD:/work" -w /work bash:3.2 \
+  sh -c 'apk add --no-cache diffutils >/dev/null && SPUR_TEST_SHELL=bash sh tests/run.sh harness-'
+```
+
+It does not stand in for the macOS job: the awk, `ps` and the other
+utilities there are BSD, and in the image they are busybox.
 
 ## Not worth testing
 
