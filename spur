@@ -270,7 +270,7 @@ parser_error() {
     printf 'spur: %s\n' "$line"
   done >&2
   if [ "$1" -eq 67 ]; then
-    printf "spur: run 'spur --list' to see the available tasks\n" >&2
+    printf "spur: run '%s --list' to see the available tasks\n" "$HINT" >&2
   fi
   exit "$1"
 }
@@ -389,6 +389,16 @@ fi
 SPUR_ROOT=$(dirname "$SPUR_FILE")
 cd "$SPUR_ROOT" || die 66 "cannot enter $SPUR_ROOT"
 
+# The command the hints tell the user to run. With -f or -C it names the
+# Spurfile, so that it finds the same one from wherever it is typed.
+HINT=spur
+if [ -n "$spurfile_opt$chdir_opt" ]; then
+  case $SPUR_FILE in
+    *[!A-Za-z0-9_./+-]*) HINT="spur -f \"$SPUR_FILE\"" ;;
+    *) HINT="spur -f $SPUR_FILE" ;;
+  esac
+fi
+
 # ------------------------------------------------------------------ assembly
 
 # shellcheck disable=SC2016  # the prelude is literal text for the task shell
@@ -441,7 +451,7 @@ check_failed=
 check_task() {
   build_script "$1"
   if ! sh_check "spur $1" "$script"; then
-    printf "spur: run 'spur -n %s' to see the assembled script\n" "$1" >&2
+    printf "spur: run '%s -n %s' to see the assembled script\n" "$HINT" "$1" >&2
     check_failed=1
   fi
 }
