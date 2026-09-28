@@ -92,7 +92,7 @@ any run fails, the scenario fails with the runner's stderr.
 ## Rules
 
 - Strict POSIX sh. No bashisms. `shellcheck -s sh` must pass clean.
-- Strict POSIX awk inside `AWK_PARSER`, and **never a single quote**: the
+- Strict POSIX awk inside `SPUR_PARSER`, and **never a single quote**: the
   program lives inside a single-quoted shell string.
 - The runner depends on `sh`, `awk` and the basic POSIX utilities `dirname`,
   `basename` and `cat`, nothing else; `exec-minimal-path` holds it to that.

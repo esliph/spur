@@ -44,17 +44,17 @@ The runner is four sequential stages inside one file, in this order:
    `spurfile` (both spellings exist because macOS/Windows filesystems are
    case-insensitive). The process then `cd`s to the Spurfile's directory, so
    every task runs from there.
-2. **Parsing** — `AWK_PARSER`, a single awk program held in a single-quoted
+2. **Parsing** — `SPUR_PARSER`, a single awk program held in a single-quoted
    shell string, with five modes selected by `-v mode=`: `list`, `names`,
    `preamble`, `body`, `describe`. It emits diagnostics on **stdout** and carries meaning in the exit
    status (65 malformed, 67 unknown task) because `/dev/stderr` is not portable
    across awk implementations. `run_parser` must stay a function writing to the
-   global `PARSER_OUT` — wrapping it in a command substitution would swallow
-   the exit status the caller needs.
-3. **Assembly** — `build_script` concatenates `PRELUDE` (`set -e` plus an
+   global `SPUR_PARSER_OUT` — wrapping it in a command substitution would
+   swallow the exit status the caller needs.
+3. **Assembly** — `build_script` concatenates `SPUR_PRELUDE` (`set -e` plus an
    injected `spur()` function pointing at `$SPUR_BIN`), then the preamble, then
    optionally `PS4`/`set -x`, then the dedented body.
-4. **Execution** — `exec sh -c "$script" "spur $task" "$@"`. The single `sh -c`
+4. **Execution** — `exec sh -c "$spur_script" "spur $spur_task" "$@"`. The single `sh -c`
    is load-bearing: it is why stdin stays free for interactive tasks, why no
    temporary file is needed, and why shell errors are labelled
    `spur build: line 3: ...` ($0 is set to `spur <task>`).
@@ -80,6 +80,11 @@ Things that follow from that structure and are easy to break:
   66 Spurfile not found, 67 unknown task, 68 recursion.
 - **Exported environment**: `SPUR_BIN`, `SPUR_ROOT` (= task working dir),
   `SPUR_INVOCATION_DIR`, `SPUR_TASK`, `SPUR_STACK`.
+- **The runner's variables start with `spur_` or `SPUR_`**, loop variables
+  and function temporaries included. The task inherits the runner's
+  environment, so a plain name like `mode` would overwrite the caller's
+  exported `mode` (see `tests/cases/exec-caller-environment-kept.sh`, which
+  also scans the runner for stray names).
 
 ## Test suite
 
@@ -136,7 +141,7 @@ script.
 - Strict POSIX sh. No bashisms anywhere, including in the test suite.
   `shellcheck -s sh` must pass clean; existing `# shellcheck disable=` comments
   carry a justification and new ones should too.
-- Inside `AWK_PARSER`: strict POSIX awk, and **never a single quote** — the
+- Inside `SPUR_PARSER`: strict POSIX awk, and **never a single quote** — the
   program lives inside a single-quoted shell string and a quote would terminate
   it.
 - The runner may depend on `sh`, `awk` and the basic POSIX utilities

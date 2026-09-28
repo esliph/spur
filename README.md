@@ -376,6 +376,9 @@ called from.
 | `SPUR_TASK`           | the running task's name                                   |
 | `SPUR_STACK`          | the call chain, used by the recursion guard               |
 
+Every other variable reaches the task as the caller left it, except names
+that start with `SPUR_` or `spur_`: those belong to spur.
+
 
 ### Exit codes
 

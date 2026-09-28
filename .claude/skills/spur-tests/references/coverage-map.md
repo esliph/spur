@@ -18,7 +18,7 @@ Run that last line before quoting a count from this file. The numbers are the
 part that rots first, and a wrong one here reads like coverage that exists.
 
 To find an unreached branch in the runner, read the diagnostic strings in
-`spur` (`err(...)` inside `AWK_PARSER`, and every `die`) and grep the cases for
+`spur` (`err(...)` inside `SPUR_PARSER`, and every `die`) and grep the cases for
 each message. A message no case asserts is a branch no case reaches.
 
 ## What each group pins
@@ -190,7 +190,7 @@ suite has no measure of how much it would catch; these two would give it one
 without adding a dependency:
 
 - **Diagnostic coverage, automated.** The check described under "Auditing it
-  yourself" (every `err("...")` in `AWK_PARSER` and every `die` message is
+  yourself" (every `err("...")` in `SPUR_PARSER` and every `die` message is
   asserted by some case) is still done by hand. Scripted, it would turn a new
   unasserted branch into a red run. The extraction must trim what the
   message builds at run time: a naive `die [0-9]* "[^"$]*` keeps the space
