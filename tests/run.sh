@@ -8,71 +8,260 @@
 # the name is a substring filter over the case names. Selecting nothing is a
 # usage error (exit 64).
 #
+# The selected cases run in parallel workers, each case in a subshell in its
+# own directory, with stdin closed. The report comes once every case has
+# finished, in alphabetical order, so it reads the same with any number of
+# workers.
+#
 # Environment:
 #   SPUR_TEST_SHELL     shell used to run the runner under test (default: sh)
 #   SPUR_TEST_TMPDIR    where the per-case directories go (default: /tmp)
+#   SPUR_TEST_JOBS      number of workers (default: the number of CPUs);
+#                       1 runs the cases one at a time
+#   SPUR_TEST_TIMES     1 adds each case's duration and lists the five slowest
+#   SPUR_TEST_AWK       awk the runner runs with, words split on spaces and
+#                       no quoting: gawk --posix, mawk, busybox awk
+#                       (default: the awk on PATH)
+# shellcheck disable=SC2154  # $names, $count, $workdir, $clock and $ms come from tests/common.sh
 
-root=$(cd "$(dirname "$0")/.." && pwd)
+case $0 in
+  */*) here=${0%/*} ;;
+  *) here=. ;;
+esac
+root=$(cd "$here/.." && pwd)
 runner=$root/spur
 shell_under_test=${SPUR_TEST_SHELL:-sh}
 filter=${1:-}
-workdir=${SPUR_TEST_TMPDIR:-/tmp}/spur-tests.$$
-passed=0
-failed=0
+
+# shellcheck source=tests/common.sh
+. "$root/tests/common.sh"
+work_dir spur-tests
+
+# SPUR_TEST_JOBS is a positive integer; empty means unset.
+if [ -n "${SPUR_TEST_JOBS:-}" ]; then
+  workers=$SPUR_TEST_JOBS
+  positive_int SPUR_TEST_JOBS "$workers"
+else
+  workers=$(getconf _NPROCESSORS_ONLN 2>/dev/null)
+  case $workers in
+    '' | *[!0-9]* | 0*) workers=1 ;;
+  esac
+fi
+
+# SPUR_TEST_AWK: resolve its first word now, so a typo is a usage error
+# before any case runs; the wrapper is written once the work directory
+# exists.
+awk_cmd=${SPUR_TEST_AWK:-}
+awk_path=
+if [ -n "$awk_cmd" ]; then
+  # Split on spaces on purpose: the value is a command and its words.
+  # shellcheck disable=SC2086
+  set -- $awk_cmd
+  awk_path=$(command -v "$1" 2>/dev/null) || awk_path=
+  case $awk_path in
+    /*) ;;
+    */*) awk_path=$PWD/$awk_path ;;
+    *)
+      printf 'SPUR_TEST_AWK: cannot find %s\n' "$1" >&2
+      exit 64
+      ;;
+  esac
+  shift
+  awk_args=$*
+fi
+
+timing=
+if [ "${SPUR_TEST_TIMES:-}" = 1 ]; then
+  detect_clock
+  if [ -n "$clock" ]; then
+    timing=1
+  else
+    printf 'timings unavailable: date +%%s%%N does not print nanoseconds here\n' >&2
+  fi
+fi
 
 # The runner exports its own state to child processes. When the suite is
 # started through spur itself (./spur test), that state would leak into every
-# case, so start from a clean slate.
-unset SPUR_BIN SPUR_ROOT SPUR_INVOCATION_DIR SPUR_TASK SPUR_STACK
+# case, so start from a clean slate. The harness's own controls go too: a
+# case that starts a harness gets the defaults unless it asks otherwise. The
+# awk chosen by SPUR_TEST_AWK stays chosen there, through PATH.
+unset SPUR_BIN SPUR_ROOT SPUR_INVOCATION_DIR SPUR_TASK SPUR_STACK \
+  SPUR_TEST_JOBS SPUR_TEST_TIMES SPUR_TEST_AWK
 
-# shellcheck disable=SC2317,SC2329  # invoked through the EXIT and INT traps
+select_names "$root/tests/cases" "$filter"
+if [ "$count" -eq 0 ]; then
+  printf 'no test matches: %s\n' "$filter" >&2
+  exit 64
+fi
+[ "$workers" -le "$count" ] || workers=$count
+
+# shellcheck disable=SC2317,SC2329  # invoked through the EXIT trap
 cleanup() { rm -rf "$workdir"; }
 trap cleanup EXIT
-trap 'cleanup; exit 130' INT
 
 mkdir -p "$workdir" || {
   printf 'cannot create %s\n' "$workdir" >&2
   exit 70
 }
 
-exact=
-if [ -n "$filter" ] && [ -f "$root/tests/cases/$filter.sh" ]; then
-  exact=1
+# A script named awk, first on PATH, that execs the chosen awk by its
+# absolute path. A symlink would not carry the extra words, and under MSYS
+# (Git Bash) a copied binary no longer finds its DLLs.
+if [ -n "$awk_path" ]; then
+  mkdir "$workdir/.awk"
+  printf '#!/bin/sh\nexec '\''%s'\'' %s "$@"\n' "$awk_path" "$awk_args" \
+    >"$workdir/.awk/awk"
+  chmod +x "$workdir/.awk/awk"
+  PATH=$workdir/.awk:$PATH
+  export PATH
 fi
 
-for case_file in "$root"/tests/cases/*.sh; do
-  name=$(basename "$case_file" .sh)
-  if [ -n "$exact" ]; then
-    [ "$name" = "$filter" ] || continue
-  else
-    case $name in
-      *"$filter"*) ;;
-      *) continue ;;
-    esac
+# descendants PID... -- print the PIDs of every process below the given ones.
+# POSIX ps takes -A -o; busybox ps lists everything without -A, and the ps of
+# MSYS (Git Bash) takes neither but prints PID and PPID first, after a status
+# letter on some lines.
+# shellcheck disable=SC2317,SC2329  # invoked through stop_now
+descendants() {
+  { ps -A -o pid= -o ppid= || ps -o pid= -o ppid= || ps -e; } 2>/dev/null |
+    awk -v roots="$*" '
+      { i = ($1 ~ /^[0-9]+$/) ? 1 : 2
+        if ($i ~ /^[0-9]+$/ && $(i + 1) ~ /^[0-9]+$/) parent[$i] = $(i + 1) }
+      END {
+        n = split(roots, r, " ")
+        for (k = 1; k <= n; k++) below[r[k]] = 1
+        do {
+          more = 0
+          for (p in parent)
+            if (!(p in below) && (parent[p] in below)) { below[p] = 1; more = 1; print p }
+        } while (more)
+      }'
+}
+
+# stop_now STATUS -- the second INT or TERM: stop the workers and everything
+# they started, then exit with STATUS. A case is an asynchronous list too, so
+# it ignores SIGINT, and a Ctrl-C would never reach a case that hangs; TERM
+# does. Killing only the workers would orphan the case in progress, which
+# would go on running in a work directory that is being removed. The EXIT
+# trap removes the work directory.
+# shellcheck disable=SC2317,SC2329  # invoked through the INT and TERM traps set by interrupt
+stop_now() {
+  # $pids and the output of descendants are PIDs, numbers split into one
+  # word each on purpose.
+  # shellcheck disable=SC2046,SC2086
+  kill $(descendants $pids) $pids 2>/dev/null
+  wait
+  exit "$1"
+}
+
+# interrupt STATUS -- the first INT or TERM: tell each worker to finish the
+# case it is running and start no other, and exit with STATUS once they have
+# (after the wait below). Workers are asynchronous lists, which ignore SIGINT
+# in a non-interactive shell, so a Ctrl-C reaches only this process and the
+# stop has to be passed on. A second INT or TERM stops waiting (stop_now).
+#
+# The trap returns at once and the waiting happens outside it: bash 3.2 (sh
+# on macOS) ignores a signal that arrives while the trap for that same
+# signal is running, so a second TERM sent during a wait inside the trap
+# would never be seen. Returning also keeps stop_now from running nested in
+# this trap, where bash 3.2 would skip the EXIT trap on its exit.
+# shellcheck disable=SC2317,SC2329  # invoked through the INT and TERM traps
+interrupt() {
+  stop_status=$1
+  trap 'stop_now 130' INT
+  trap 'stop_now 143' TERM
+  : >"$workdir/.stop"
+}
+stop_status=
+trap 'interrupt 130' INT
+trap 'interrupt 143' TERM
+
+# run_case NAME -- run one case, leaving its output in NAME.log and, in
+# NAME.status, its exit status followed by its duration in milliseconds when
+# timing is on.
+run_case() {
+  mkdir "$workdir/$1"
+  if [ -n "$timing" ]; then
+    now_ms
+    start=$ms
   fi
-  casedir=$workdir/$name
-  mkdir -p "$casedir"
-  if (
-    cd "$casedir" || exit 1
+  (
+    cd "$workdir/$1" || exit 1
     . "$root/tests/lib.sh"
     # shellcheck source=/dev/null
-    . "$case_file"
-  ) >"$workdir/$name.log" 2>&1; then
+    . "$root/tests/cases/$1.sh"
+  ) >"$workdir/$1.log" 2>&1 </dev/null
+  rc=$?
+  elapsed=
+  if [ -n "$timing" ]; then
+    now_ms
+    elapsed=$((ms - start))
+  fi
+  printf '%s %s\n' "$rc" "$elapsed" >"$workdir/$1.status"
+}
+
+# run_worker K -- run, one after another, the selected cases whose position in
+# the list is K modulo the number of workers. Neighbours share a group and
+# cost about the same, so round-robin spreads each group over the workers.
+run_worker() {
+  i=0
+  # Case names are file names: no spaces, no glob characters.
+  # shellcheck disable=SC2086
+  for name in $names; do
+    [ -d "$workdir" ] && [ ! -f "$workdir/.stop" ] || return 0
+    if [ $((i % workers)) -eq "$1" ]; then
+      run_case "$name"
+    fi
+    i=$((i + 1))
+  done
+}
+
+pids=
+k=0
+while [ "$k" -lt "$workers" ]; do
+  run_worker "$k" &
+  pids="$pids $!"
+  k=$((k + 1))
+done
+# wait with no operand returns 0 once every worker has exited, and more than
+# 128 when a trapped signal cuts it short; then the workers are still
+# running, so wait again.
+until wait; do :; done
+[ -z "$stop_status" ] || exit "$stop_status"
+
+passed=0
+failed=0
+slowest=
+# Case names are file names: no spaces, no glob characters.
+# shellcheck disable=SC2086
+for name in $names; do
+  rc=
+  elapsed=
+  if [ -f "$workdir/$name.status" ]; then
+    read -r rc elapsed <"$workdir/$name.status"
+  fi
+  suffix=${elapsed:+  ($elapsed ms)}
+  if [ "$rc" = 0 ]; then
     passed=$((passed + 1))
-    printf 'ok   %s\n' "$name"
+    printf 'ok   %s%s\n' "$name" "$suffix"
   else
     failed=$((failed + 1))
-    printf 'FAIL %s\n' "$name"
+    printf 'FAIL %s%s\n' "$name" "$suffix"
     sed 's/^/     /' "$workdir/$name.log"
+  fi
+  if [ -n "$elapsed" ]; then
+    slowest="$slowest$elapsed $name
+"
   fi
 done
 
-if [ $((passed + failed)) -eq 0 ]; then
-  printf 'no test matches: %s\n' "$filter" >&2
-  exit 64
+printf '\n%s passed, %s failed (shell: %s, jobs: %s%s)\n' \
+  "$passed" "$failed" "$shell_under_test" "$workers" "${awk_cmd:+, awk: $awk_cmd}"
+if [ -n "$timing" ]; then
+  printf '\nslowest:\n'
+  printf '%s' "$slowest" | sort -rn | sed 5q | while read -r t n; do
+    printf '%8s ms  %s\n' "$t" "$n"
+  done
 fi
-
-printf '\n%s passed, %s failed (shell: %s)\n' "$passed" "$failed" "$shell_under_test"
 if [ "$failed" -eq 0 ]; then
   exit 0
 fi

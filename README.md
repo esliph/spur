@@ -53,8 +53,10 @@ happens — a container or a server where you would rather add nothing at all.
 
 ### What is actually different
 
-- **Nothing to install.** The runner is one file that depends on `sh` and
-`awk`. Fetch it with `curl`, or commit it into the repository and let
+- **Nothing to install.** The runner is one file that depends on `sh`, `awk`
+and the basic POSIX utilities `dirname`, `basename` and `cat`, nothing else (a
+test runs it with only those on `PATH`). Fetch it with `curl`, or commit it
+into the repository and let
 whoever clones run `./spur test` on a machine with no package manager and
 no network.
 - **Positional passthrough.** `spur test -k login -vv` hands `-k login -vv`
@@ -67,7 +69,7 @@ work the way they do in a script, and `set -e` aborts on the first failure.
 - **The runner expands nothing.** `$IMAGE`, `$(date)`, `${x:-y}` and `$$`
 reach the shell byte for byte. There is no template layer to escape, so
 there is nothing to learn beyond the shell you already know.
-- **A scope you can read in an afternoon.** About 330 lines of sh with the
+- **A scope you can read in an afternoon.** About 550 lines of sh with the
 parser included. When it does something surprising, the source is right
 there and it is the same file that was installed.
 
@@ -156,9 +158,10 @@ chmod +x spur
 git add spur Spurfile && git commit -m "chore: vendor spur"
 ```
 
-The runner is one file with no dependencies beyond `sh` and `awk`, so
+The runner is one file with no dependencies beyond `sh`, `awk` and the basic
+POSIX utilities `dirname`, `basename` and `cat`, so
 committing it is not the same kind of decision as committing a binary: it is
-about 330 lines of readable shell, it diffs, and it is the same file on every
+about 550 lines of readable shell, it diffs, and it is the same file on every
 platform. From then on the tasks run with no install step at all:
 
 ```console
@@ -199,10 +202,13 @@ build: ## build the image
   _log "building $IMAGE"
   docker build -t "$IMAGE" .
 
+## Build first, then run pytest. Arguments go straight to pytest:
+##   spur test -k login -vv
 test: ## run the tests
   spur build
   pytest -q "$@"
 
+##@ Database
 db-reset: ## recreate the database (destructive)
   dropdb --if-exists app && createdb app
 ```
@@ -211,9 +217,18 @@ db-reset: ## recreate the database (destructive)
 $ spur --list
 Spurfile: /home/usr/project/Spurfile
 
+Tasks
   build      build the image
   test       run the tests
+
+Database
   db-reset   recreate the database (destructive)
+
+$ spur --describe test
+test: run the tests
+
+Build first, then run pytest. Arguments go straight to pytest:
+  spur test -k login -vv
 
 $ spur test -k login -vv
 ```
@@ -224,6 +239,17 @@ $ spur test -k login -vv
 `.` (`db-reset`, `docker.build`).
 - `## text` in the header is the description shown by `--list`. A task
 without one is still runnable.
+- `##` lines at column zero right above a header are the task's long help,
+shown by `spur --describe <task>`. The block must touch the header: a blank
+line, a `#` comment or a `##@` in between detaches it. Each line loses `##`
+and one space; the rest, indentation included, is printed as written, and a
+bare `##` is a blank line. A line of three or more `#` (a `###` heading, a
+`##########` banner) is an ordinary comment, never part of the block. To
+the shell they are all ordinary comments.
+- `##@ Title` at column zero opens a section: `--list` groups the tasks that
+follow under that heading, in file order. Tasks before the first `##@`, or
+after a `##@` with no title, are listed under `Tasks`. A section with no
+tasks is not shown. To the shell it is an ordinary comment.
 - The body is indented. Spaces are canonical; a tab is accepted and never
 required.
 - Before running, the runner removes the longest common indentation from the
@@ -262,6 +288,9 @@ spur -C api test -k x  # -C api is the runner's; -k x is the task's
 | `-C DIR`          | change to DIR before anything else                            |
 | `-l`, `--list`    | list the tasks and exit                                       |
 | `-n`              | print the assembled script instead of running it              |
+| `--check`         | syntax-check the task, or every task, without running it      |
+| `--names`         | print the task names, one per line, and exit                  |
+| `--describe`      | print the task's long help (its `##` block) and exit          |
 | `-x`              | trace commands (`set -x`) after the preamble, with `PS4='$ '` |
 | `-h`, `--help`    | show help                                                     |
 | `-v`, `--version` | show the version                                              |
@@ -269,6 +298,54 @@ spur -C api test -k x  # -C api is the runner's; -k x is the task's
 
 `spur` with no task name lists the tasks. Short flags cannot be grouped
 (`-xn` is not `-x -n`).
+
+`spur --check` validates the Spurfile in CI without running anything: it
+assembles each task as `-n` would and hands it to `sh -n`, which parses but
+does not execute. An `if` without `fi` or an unterminated heredoc fails with
+65, every broken task is reported, and success prints nothing. It checks
+syntax only: a misspelled command or an unset variable still passes. Name a
+task (`spur --check deploy`) to check just that one. The line numbers in the
+errors refer to the assembled script, so `spur -n <task>` shows what they
+point at.
+
+`--list` is for people; `spur --names` is for programs. It prints the task
+names in file order, one per line, with no header, sections or descriptions,
+and prints nothing at all when there are no tasks. Errors go to stderr only,
+with the usual exit codes. It cannot be combined with `-l`, `-n`, `-x` or
+`--check`.
+
+```sh
+for t in $(spur --names); do spur --check "$t"; done
+```
+
+`spur --describe <task>` documents a task's interface without the runner
+interpreting its arguments. It prints `task: description` from the header,
+then the `##` block above it; with neither, `task: (no description)`. It
+runs nothing, needs a task name (64 without one), exits 67 for an unknown
+task, and cannot be combined with `-l`, `-n`, `-x`, `--check` or `--names`.
+It is `--describe` and not `-h`, because `spur test -h` belongs to the task.
+
+### Shell completion
+
+Each snippet completes task names for the first word after `spur` and falls
+back to file names after it. They call the `spur` on your `PATH`.
+
+```bash
+# bash (~/.bashrc)
+_spur() { [ "$COMP_CWORD" -eq 1 ] && COMPREPLY=($(compgen -W "$(spur --names 2>/dev/null)" -- "$2")); }
+complete -o default -F _spur spur
+```
+
+```zsh
+# zsh (~/.zshrc, after compinit)
+_spur() { if (( CURRENT == 2 )); then compadd -- ${(f)"$(spur --names 2>/dev/null)"}; else _files; fi }
+compdef _spur spur
+```
+
+```fish
+# fish (~/.config/fish/completions/spur.fish)
+complete -c spur -f -n __fish_is_first_arg -a '(spur --names 2>/dev/null)'
+```
 
 ## How a task runs
 
@@ -298,6 +375,9 @@ called from.
 | `SPUR_INVOCATION_DIR` | the directory you called from                             |
 | `SPUR_TASK`           | the running task's name                                   |
 | `SPUR_STACK`          | the call chain, used by the recursion guard               |
+
+Every other variable reaches the task as the caller left it, except names
+that start with `SPUR_` or `spur_`: those belong to spur.
 
 
 ### Exit codes

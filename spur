@@ -4,22 +4,26 @@
 #
 # A task runner in strict POSIX sh. There is no runtime and no build step:
 # this file is the whole program.
+#
+# Every variable of the runner starts with spur_ or SPUR_. The task inherits
+# the runner's environment, so any other name would overwrite a variable of
+# the same name the caller exported.
 
-VERSION=0.1.0
+SPUR_VERSION=0.1.0
 
 # --------------------------------------------------------------- diagnostics
 
 # die CODE MESSAGE...
 die() {
-  code=$1
+  spur_code=$1
   shift
   printf 'spur: %s\n' "$*" >&2
-  exit "$code"
+  exit "$spur_code"
 }
 
 usage() {
   cat <<EOF
-spur $VERSION - Simple Portable Universal Runner
+spur $SPUR_VERSION - Simple Portable Universal Runner
 
 Usage:
   spur [runner flags] <task> [task arguments...]
@@ -32,6 +36,9 @@ Runner flags:
   -C DIR         change to DIR before anything else
   -l, --list     list the tasks and exit
   -n             print the assembled script instead of running it
+  --check        syntax-check the task (or every task) without running it
+  --names        print the task names, one per line, and exit
+  --describe     print the task's long help (its ## block) and exit
   -x             trace commands (set -x) after the preamble
   -h, --help     show this help and exit
   -v, --version  show the version and exit
@@ -55,10 +62,16 @@ resolve_self() {
       printf '%s/%s\n' "$(cd "$(dirname "$0")" && pwd)" "$(basename "$0")"
       ;;
     *)
-      self=$(command -v -- "$0" 2>/dev/null) || self=$0
-      case $self in
-        /*) printf '%s\n' "$self" ;;
-        *) printf '%s/%s\n' "$(cd "$(dirname "$self")" && pwd)" "$(basename "$self")" ;;
+      # "sh spur" opens ./spur before searching PATH, so a file of that name
+      # here is the one running; PATH is only asked when there is none.
+      if [ -f "$0" ]; then
+        printf '%s/%s\n' "$PWD" "$0"
+        return 0
+      fi
+      spur_self=$(command -v -- "$0" 2>/dev/null) || spur_self=$0
+      case $spur_self in
+        /*) printf '%s\n' "$spur_self" ;;
+        *) printf '%s/%s\n' "$(cd "$(dirname "$spur_self")" && pwd)" "$(basename "$spur_self")" ;;
       esac
       ;;
   esac
@@ -66,32 +79,36 @@ resolve_self() {
 
 # Print the nearest Spurfile, searching upwards from the current directory.
 find_spurfile() {
-  dir=$PWD
+  spur_dir=$PWD
   while :; do
-    if [ -f "$dir/Spurfile" ]; then
-      printf '%s/Spurfile\n' "$dir"
+    if [ -f "$spur_dir/Spurfile" ]; then
+      printf '%s/Spurfile\n' "$spur_dir"
       return 0
     fi
-    if [ -f "$dir/spurfile" ]; then
-      printf '%s/spurfile\n' "$dir"
+    if [ -f "$spur_dir/spurfile" ]; then
+      printf '%s/spurfile\n' "$spur_dir"
       return 0
     fi
-    parent=$(dirname "$dir")
-    [ "$parent" = "$dir" ] && return 1
-    dir=$parent
+    spur_parent=$(dirname "$spur_dir")
+    [ "$spur_parent" = "$spur_dir" ] && return 1
+    spur_dir=$spur_parent
   done
 }
 
 # ------------------------------------------------------------------- parsing
 
 # The Spurfile parser. Modes:
-#   list      one formatted line per task
+#   list      one formatted line per task, under its ##@ section heading
 #   preamble  every line before the first task header
+#   names     one task name per line, in file order
 #   body      the dedented body of the task named by "want"
+#   describe  the header description of "want", then the ## block right
+#             above its header, without the leading "##" and one space; a
+#             line of three or more # is an ordinary comment
 # Diagnostics go to stdout; the exit status carries the meaning (65 syntax,
 # 67 unknown task), because /dev/stderr is not portable across awks.
 # shellcheck disable=SC2016  # awk source, deliberately not expanded by sh
-AWK_PARSER='
+SPUR_PARSER='
 function err(msg) { printf "%s:%d: %s\n", file, NR, msg; failed = 1; exit 65 }
 function ws(s) { match(s, /^[ \t]*/); return substr(s, 1, RLENGTH) }
 function cprefix(a, b,   i, n) {
@@ -99,7 +116,49 @@ function cprefix(a, b,   i, n) {
   for (i = 1; i <= n; i++) if (substr(a, i, 1) != substr(b, i, 1)) return substr(a, 1, i - 1)
   return substr(a, 1, n)
 }
-BEGIN { started = 0; in_body = 0; capturing = 0; found = 0; nb = 0; npre = 0; nt = 0; maxlen = 0 }
+# Edit distance counting a swap of two adjacent characters as one edit.
+function dist(a, b,   la, lb, i, j, c, v, d) {
+  la = length(a); lb = length(b)
+  for (i = 0; i <= la; i++) d[i, 0] = i
+  for (j = 0; j <= lb; j++) d[0, j] = j
+  for (i = 1; i <= la; i++) for (j = 1; j <= lb; j++) {
+    c = (substr(a, i, 1) != substr(b, j, 1))
+    v = d[i - 1, j - 1] + c
+    if (d[i - 1, j] + 1 < v) v = d[i - 1, j] + 1
+    if (d[i, j - 1] + 1 < v) v = d[i, j - 1] + 1
+    if (i > 1 && j > 1 && substr(a, i, 1) == substr(b, j - 1, 1) &&
+        substr(a, i - 1, 1) == substr(b, j, 1) && d[i - 2, j - 2] + 1 < v)
+      v = d[i - 2, j - 2] + 1
+    d[i, j] = v
+  }
+  return d[la, lb]
+}
+# Report an unknown "want", with up to three close task names: within a
+# third of its length in edits (none below three characters), or starting
+# with it. Closest first, then file order.
+function unknown(   w, lim, i, j, k, n, best, out, cand, cd, used) {
+  printf "unknown task: %s\n", want
+  w = tolower(want); lim = int(length(w) / 3)
+  n = 0
+  for (i = 1; i <= nt; i++) {
+    k = dist(w, tolower(tname[i]))
+    if (k <= lim || (length(w) >= 2 && index(tolower(tname[i]), w) == 1)) {
+      cand[++n] = i; cd[i] = k
+    }
+  }
+  out = ""
+  for (k = 1; k <= 3; k++) {
+    best = 0
+    for (j = 1; j <= n; j++)
+      if (!(cand[j] in used) && (best == 0 || cd[cand[j]] < cd[best])) best = cand[j]
+    if (best == 0) break
+    used[best] = 1
+    out = out (out == "" ? "" : ", ") tname[best]
+  }
+  if (out != "") printf "did you mean: %s?\n", out
+  exit 67
+}
+BEGIN { started = 0; in_body = 0; capturing = 0; found = 0; nb = 0; npre = 0; nt = 0; nd = 0; dend = -1; maxlen = 0; cursec = "Tasks" }
 {
   line = $0
   sub(/\r$/, "", line)
@@ -113,6 +172,15 @@ BEGIN { started = 0; in_body = 0; capturing = 0; found = 0; nb = 0; npre = 0; nt
     if (!started) { pre[++npre] = line; next }
     err("indented line does not belong to any task")
   }
+  if (line ~ /^##@/) {
+    cursec = substr(line, 4); sub(/^[ \t]+/, "", cursec); sub(/[ \t]+$/, "", cursec)
+    if (cursec == "") cursec = "Tasks"
+  }
+  if (line ~ /^##([^#@]|$)/) {
+    if (dend != NR - 1) nd = 0
+    t = substr(line, 3); sub(/^ /, "", t)
+    doc[++nd] = t; dend = NR
+  }
   if (line ~ /^#/) { in_body = 0; capturing = 0; if (!started) pre[++npre] = line; next }
   if (line ~ /^[A-Za-z0-9_.-]+:/) {
     colon = index(line, ":")
@@ -125,11 +193,15 @@ BEGIN { started = 0; in_body = 0; capturing = 0; found = 0; nb = 0; npre = 0; nt
     sub(/^[ \t]+/, "", desc); sub(/[ \t]+$/, "", desc)
     if (name in seen) err("duplicate task: " name)
     seen[name] = 1
-    tname[++nt] = name; tdesc[nt] = desc
+    tname[++nt] = name; tdesc[nt] = desc; tsec[nt] = cursec
     if (length(name) > maxlen) maxlen = length(name)
     started = 1; in_body = 1
     capturing = (mode == "body" && name == want)
     if (capturing) found = 1
+    if (mode == "describe" && name == want) {
+      found = 1; wdesc = desc; wnd = 0
+      if (dend == NR - 1) for (i = 1; i <= nd; i++) wdoc[++wnd] = doc[i]
+    }
     next
   }
   if (!started) { pre[++npre] = line; next }
@@ -140,9 +212,26 @@ END {
   if (mode == "list") {
     fmt = "  %-" (maxlen + 3) "s%s\n"
     for (i = 1; i <= nt; i++) {
+      if (i > 1 && tsec[i] != tsec[i - 1]) printf "\n"
+      if (i == 1 || tsec[i] != tsec[i - 1]) print tsec[i]
       if (tdesc[i] == "") printf "  %s\n", tname[i]
       else printf fmt, tname[i], tdesc[i]
     }
+    exit 0
+  }
+  if (mode == "names") {
+    for (i = 1; i <= nt; i++) print tname[i]
+    exit 0
+  }
+  if (mode == "describe") {
+    if (!found) unknown()
+    first = 1
+    while (first <= wnd && wdoc[first] ~ /^[ \t]*$/) first++
+    if (wdesc != "") print want ": " wdesc
+    else if (first > wnd) print want ": (no description)"
+    else print want
+    if (first <= wnd) print ""
+    for (i = first; i <= wnd; i++) print wdoc[i]
     exit 0
   }
   if (mode == "preamble") {
@@ -150,7 +239,7 @@ END {
     exit 0
   }
   if (mode == "body") {
-    if (!found) { printf "unknown task: %s\n", want; exit 67 }
+    if (!found) unknown()
     while (nb > 0 && body[nb] ~ /^[ \t]*$/) nb--
     pfx = ""; first = 1
     for (i = 1; i <= nb; i++) {
@@ -168,23 +257,25 @@ END {
 }
 '
 
-PARSER_OUT=
+SPUR_PARSER_OUT=
 
-# run_parser MODE WANT -- leaves the parser output in PARSER_OUT and returns
-# the parser exit status. Must stay a function, never a command substitution,
-# so that the caller can exit on failure.
+# run_parser MODE WANT -- leaves the parser output in SPUR_PARSER_OUT and
+# returns the parser exit status. Must stay a function, never a command
+# substitution, so that the caller can exit on failure.
 run_parser() {
-  PARSER_OUT=$(
-    awk -v mode="$1" -v want="$2" -v file="$(basename "$SPUR_FILE")" \
-      "$AWK_PARSER" "$SPUR_FILE"
+  SPUR_PARSER_OUT=$(
+    awk -v mode="$1" -v want="$2" -v file="${SPUR_FILE##*/}" \
+      "$SPUR_PARSER" "$SPUR_FILE"
   )
 }
 
-# parser_error STATUS -- report PARSER_OUT and exit.
+# parser_error STATUS -- report SPUR_PARSER_OUT and exit.
 parser_error() {
-  printf 'spur: %s\n' "$PARSER_OUT" >&2
+  printf '%s\n' "$SPUR_PARSER_OUT" | while IFS= read -r spur_line; do
+    printf 'spur: %s\n' "$spur_line"
+  done >&2
   if [ "$1" -eq 67 ]; then
-    printf "spur: run 'spur --list' to see the available tasks\n" >&2
+    printf "spur: run '%s --list' to see the available tasks\n" "$SPUR_HINT" >&2
   fi
   exit "$1"
 }
@@ -192,8 +283,8 @@ parser_error() {
 list_tasks() {
   run_parser list "" || parser_error $?
   printf 'Spurfile: %s\n\n' "$SPUR_FILE"
-  if [ -n "$PARSER_OUT" ]; then
-    printf '%s\n' "$PARSER_OUT"
+  if [ -n "$SPUR_PARSER_OUT" ]; then
+    printf '%s\n' "$SPUR_PARSER_OUT"
   else
     printf '  (no tasks defined)\n'
   fi
@@ -201,34 +292,49 @@ list_tasks() {
 
 # ----------------------------------------------------------- argument parsing
 
-spurfile_opt=
-chdir_opt=
-list_opt=
-dry_opt=
-trace_opt=
+spur_file_opt=
+spur_chdir_opt=
+spur_list_opt=
+spur_dry_opt=
+spur_trace_opt=
+spur_check_opt=
+spur_names_opt=
+spur_describe_opt=
 
 while [ $# -gt 0 ]; do
   case $1 in
     -f)
       [ $# -ge 2 ] || die 64 "option -f requires an argument"
-      spurfile_opt=$2
+      spur_file_opt=$2
       shift 2
       ;;
     -C)
       [ $# -ge 2 ] || die 64 "option -C requires an argument"
-      chdir_opt=$2
+      spur_chdir_opt=$2
       shift 2
       ;;
     -l | --list)
-      list_opt=1
+      spur_list_opt=1
       shift
       ;;
     -n)
-      dry_opt=1
+      spur_dry_opt=1
       shift
       ;;
     -x)
-      trace_opt=1
+      spur_trace_opt=1
+      shift
+      ;;
+    --check)
+      spur_check_opt=1
+      shift
+      ;;
+    --names)
+      spur_names_opt=1
+      shift
+      ;;
+    --describe)
+      spur_describe_opt=1
       shift
       ;;
     -h | --help)
@@ -236,7 +342,7 @@ while [ $# -gt 0 ]; do
       exit 0
       ;;
     -v | --version)
-      printf 'spur %s\n' "$VERSION"
+      printf 'spur %s\n' "$SPUR_VERSION"
       exit 0
       ;;
     -*)
@@ -248,11 +354,37 @@ while [ $# -gt 0 ]; do
   esac
 done
 
+# --check, --names and --describe each exclude -l, -n, -x and the modes
+# before them in that list. When several are given, the one furthest down
+# the list is reported. A new mode goes at the end of the loop.
+spur_mode=
+spur_seen=$spur_list_opt$spur_dry_opt$spur_trace_opt
+spur_flags='-l, -n'
+spur_last=-x
+for spur_m in check names describe; do
+  case $spur_m in
+    check) spur_on=$spur_check_opt ;;
+    names) spur_on=$spur_names_opt ;;
+    describe) spur_on=$spur_describe_opt ;;
+  esac
+  if [ -n "$spur_on" ]; then
+    spur_mode=$spur_m
+    spur_conflict=$spur_seen
+    spur_others="$spur_flags or $spur_last"
+  fi
+  spur_seen=$spur_seen$spur_on
+  spur_flags="$spur_flags, $spur_last"
+  spur_last=--$spur_m
+done
+if [ -n "$spur_mode" ] && [ -n "$spur_conflict" ]; then
+  die 64 "--$spur_mode cannot be combined with $spur_others"
+fi
+
 if [ $# -gt 0 ]; then
-  task=$1
+  spur_task=$1
   shift
 else
-  task=
+  spur_task=
 fi
 
 # ---------------------------------------------------------------------- setup
@@ -260,13 +392,13 @@ fi
 SPUR_BIN=$(resolve_self)
 SPUR_INVOCATION_DIR=$PWD
 
-if [ -n "$chdir_opt" ]; then
-  cd "$chdir_opt" || die 64 "cannot change directory: $chdir_opt"
+if [ -n "$spur_chdir_opt" ]; then
+  cd "$spur_chdir_opt" || die 64 "cannot change directory: $spur_chdir_opt"
 fi
 
-if [ -n "$spurfile_opt" ]; then
-  [ -f "$spurfile_opt" ] || die 66 "$spurfile_opt: no such file"
-  SPUR_FILE=$(cd "$(dirname "$spurfile_opt")" && pwd)/$(basename "$spurfile_opt")
+if [ -n "$spur_file_opt" ]; then
+  [ -f "$spur_file_opt" ] || die 66 "$spur_file_opt: no such file"
+  SPUR_FILE=$(cd "$(dirname "$spur_file_opt")" && pwd)/$(basename "$spur_file_opt")
 else
   SPUR_FILE=$(find_spurfile) ||
     die 66 "no Spurfile found in $PWD or any parent directory"
@@ -275,32 +407,118 @@ fi
 SPUR_ROOT=$(dirname "$SPUR_FILE")
 cd "$SPUR_ROOT" || die 66 "cannot enter $SPUR_ROOT"
 
+# The command the hints tell the user to run. With -f or -C it names the
+# Spurfile, so that it finds the same one from wherever it is typed.
+SPUR_HINT=spur
+if [ -n "$spur_file_opt$spur_chdir_opt" ]; then
+  case $SPUR_FILE in
+    *[!A-Za-z0-9_./+-]*) SPUR_HINT="spur -f \"$SPUR_FILE\"" ;;
+    *) SPUR_HINT="spur -f $SPUR_FILE" ;;
+  esac
+fi
+
 # ------------------------------------------------------------------ assembly
 
 # shellcheck disable=SC2016  # the prelude is literal text for the task shell
-PRELUDE='set -e
+SPUR_PRELUDE='set -e
 spur() { "$SPUR_BIN" "$@"; }'
 
-script=
+SPUR_NL='
+'
+spur_script=
+spur_head=
 
-# build_script TASK -- leaves the assembled script in the global "script".
+# build_head -- leaves the prelude, the preamble and the trace setup in the
+# global "spur_head", the part of the script that is the same for every task.
+build_head() {
+  run_parser preamble "" || parser_error $?
+  spur_head=$SPUR_PRELUDE
+  [ -z "$SPUR_PARSER_OUT" ] || spur_head=$spur_head$SPUR_NL$SPUR_PARSER_OUT
+  if [ -n "$spur_trace_opt" ]; then
+    spur_head=$spur_head$SPUR_NL"PS4='\$ '"$SPUR_NL'set -x'
+  fi
+}
+
+# build_script TASK -- leaves the assembled script in the global
+# "spur_script". Needs build_head first.
 build_script() {
   run_parser body "$1" || parser_error $?
-  body=$PARSER_OUT
-  run_parser preamble "" || parser_error $?
-  preamble=$PARSER_OUT
-
-  script=$(printf '%s\n%s\n' "$PRELUDE" "$preamble")
-  if [ -n "$trace_opt" ]; then
-    script=$(printf "%s\nPS4='\$ '\nset -x\n" "$script")
-  fi
-  script=$(printf '%s\n%s\n' "$script" "$body")
+  spur_script=$spur_head
+  [ -z "$SPUR_PARSER_OUT" ] || spur_script=$spur_script$SPUR_NL$SPUR_PARSER_OUT
 }
+
+# sh_check LABEL SCRIPT -- parse SCRIPT with sh -n, which runs nothing,
+# labelling errors like a real run. sh -n accepts a heredoc that runs to the
+# end of the script, so the script is parsed again with a line that is a
+# syntax error after anything complete: when that passes too, the line was
+# swallowed by an open heredoc. Without "<<" there is no heredoc to check.
+sh_check() {
+  sh -n -c "$2" "$1" || return 1
+  case $2 in *'<<'*) ;; *) return 0 ;; esac
+  if sh -n -c "$2$SPUR_NL)" "$1" 2>/dev/null; then
+    printf '%s: here-document not terminated\n' "$1" >&2
+    return 1
+  fi
+}
+
+# ------------------------------------------------------------------ checking
+
+spur_check_failed=
+
+# check_task TASK -- syntax-check the assembled script of TASK.
+check_task() {
+  build_script "$1"
+  if ! sh_check "spur $1" "$spur_script"; then
+    printf "spur: run '%s -n %s' to see the assembled script\n" "$SPUR_HINT" "$1" >&2
+    spur_check_failed=1
+  fi
+}
+
+# check_tasks [TASK] -- check the preamble on its own first, so that a broken
+# preamble is reported once instead of once per task; then TASK, or every
+# task in file order. Exits 65 if anything fails to parse.
+check_tasks() {
+  build_head
+  sh_check "spur (preamble)" "$spur_head" || exit 65
+  if [ -n "$1" ]; then
+    check_task "$1"
+  else
+    run_parser names "" || parser_error $?
+    # Task names match [A-Za-z0-9_.-]+, so splitting them cannot glob.
+    # shellcheck disable=SC2086
+    for spur_name in $SPUR_PARSER_OUT; do
+      check_task "$spur_name"
+    done
+  fi
+  [ -z "$spur_check_failed" ] || exit 65
+}
+
+if [ -n "$spur_check_opt" ]; then
+  check_tasks "$spur_task"
+  exit 0
+fi
 
 # ----------------------------------------------------------------- listing
 
-if [ -n "$list_opt" ] || [ -z "$task" ]; then
-  if [ -z "$task" ] && { [ -n "$dry_opt" ] || [ -n "$trace_opt" ]; }; then
+# --names is the machine-readable list: bare names, and nothing at all when
+# there are no tasks, so that completions and loops need no parsing.
+if [ -n "$spur_names_opt" ]; then
+  run_parser names "" || parser_error $?
+  [ -z "$SPUR_PARSER_OUT" ] || printf '%s\n' "$SPUR_PARSER_OUT"
+  exit 0
+fi
+
+# --describe is the long help of one task: its header description, then the
+# ## block right above its header. It runs nothing.
+if [ -n "$spur_describe_opt" ]; then
+  [ -n "$spur_task" ] || die 64 "no task given"
+  run_parser describe "$spur_task" || parser_error $?
+  printf '%s\n' "$SPUR_PARSER_OUT"
+  exit 0
+fi
+
+if [ -n "$spur_list_opt" ] || [ -z "$spur_task" ]; then
+  if [ -z "$spur_task" ] && { [ -n "$spur_dry_opt" ] || [ -n "$spur_trace_opt" ]; }; then
     die 64 "no task given"
   fi
   list_tasks
@@ -309,27 +527,28 @@ fi
 
 # ---------------------------------------------------------------- execution
 
-SPUR_TASK=$task
+SPUR_TASK=$spur_task
 
 case " ${SPUR_STACK:-} " in
-  *" $task "*)
-    chain=
+  *" $spur_task "*)
+    spur_chain=
     # shellcheck disable=SC2086
-    for frame in ${SPUR_STACK:-}; do
-      chain=${chain:+$chain -> }$frame
+    for spur_frame in ${SPUR_STACK:-}; do
+      spur_chain=${spur_chain:+$spur_chain -> }$spur_frame
     done
-    die 68 "recursion detected: ${chain:+$chain -> }$task"
+    die 68 "recursion detected: ${spur_chain:+$spur_chain -> }$spur_task"
     ;;
 esac
 
-build_script "$task"
+build_head
+build_script "$spur_task"
 
-if [ -n "$dry_opt" ]; then
-  printf '%s\n' "$script"
+if [ -n "$spur_dry_opt" ]; then
+  printf '%s\n' "$spur_script"
   exit 0
 fi
 
-SPUR_STACK=${SPUR_STACK:+$SPUR_STACK }$task
+SPUR_STACK=${SPUR_STACK:+$SPUR_STACK }$spur_task
 export SPUR_BIN SPUR_ROOT SPUR_INVOCATION_DIR SPUR_TASK SPUR_STACK
 
-exec sh -c "$script" "spur $task" "$@"
+exec sh -c "$spur_script" "spur $spur_task" "$@"

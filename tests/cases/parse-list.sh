@@ -16,6 +16,7 @@ assert_status 0
 assert_stdout_is <<EOF
 Spurfile: $PWD/Spurfile
 
+Tasks
   build    build the image
   test     run the tests
   deploy

@@ -1,13 +1,8 @@
 # The harness itself: a case is selected by its exact name, then by substring.
 # Only cases that never start the harness again may be selected here.
-# $root and $shell_under_test come from tests/run.sh; $status is read by
-# assert_status in tests/lib.sh.
-# shellcheck disable=SC2154,SC2034
-harness() {
-  "$shell_under_test" "$root/tests/run.sh" "$@" >stdout 2>stderr
-  status=$?
-  return 0
-}
+# $root and $shell_under_test come from tests/run.sh.
+# shellcheck disable=SC2154
+harness() { capture "$shell_under_test" "$root/tests/run.sh" "$@"; }
 
 # An exact name runs that case alone, even when other names contain it.
 harness discovery-flag-f
@@ -20,7 +15,11 @@ assert_stdout_has '1 passed, 0 failed'
 harness discovery-flag-f-
 assert_status 0
 assert_stdout_has 'ok   discovery-flag-f-missing'
-assert_stdout_lacks 'ok   discovery-flag-f '
+# discovery-flag-f does not contain "discovery-flag-f-", so the filter leaves
+# it out; its report line would end right after the name.
+if grep -qx 'ok   discovery-flag-f' stdout; then
+  fail "the substring filter selected discovery-flag-f"
+fi
 
 harness cli-version
 assert_status 0
@@ -33,6 +32,9 @@ assert_stdout_lacks 'passed'
 assert_stderr_has 'no test matches: no-such-case'
 
 # The prefixes group cases by theme: a prefix selects the whole group.
+group=0
+# shellcheck disable=SC2034  # f only drives the loop that counts the files
+for f in "$root"/tests/cases/cli-*.sh; do group=$((group + 1)); done
 harness cli-
 assert_status 0
-assert_stdout_has '4 passed, 0 failed'
+assert_stdout_has "$group passed, 0 failed"

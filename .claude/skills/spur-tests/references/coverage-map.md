@@ -1,7 +1,9 @@
 # Coverage map
 
 A snapshot of what the suite pins and where it is thin, audited 2026-09-21
-against 48 cases. Cases get added; re-verify before acting on anything here.
+against 48 cases and re-audited 2026-09-26 against 103, refreshed 2026-09-27
+against 112 after a review of the branch. Cases get added;
+re-verify before acting on anything here.
 
 ## Auditing it yourself
 
@@ -16,23 +18,37 @@ Run that last line before quoting a count from this file. The numbers are the
 part that rots first, and a wrong one here reads like coverage that exists.
 
 To find an unreached branch in the runner, read the diagnostic strings in
-`spur` (`err(...)` inside `AWK_PARSER`, and every `die`) and grep the cases for
+`spur` (`err(...)` inside `SPUR_PARSER`, and every `die`) and grep the cases for
 each message. A message no case asserts is a branch no case reaches.
 
 ## What each group pins
 
-**`cli-`** (4) — `-h`/`--help` shows usage; `-v`/`--version` matches
+**`cli-`** (13) — `-h`/`--help` shows usage; `-v`/`--version` matches
 `spur N.N.N`; an unknown option is 64, and `-xn` is an unknown option, not
 `-x -n` (short flags deliberately do not group); `-f` and `-C` without an
-argument are 64.
+argument are 64. The `cli-suggest-*` cases pin the `did you mean` line of an
+unknown task: typos, transpositions and prefixes are suggested, case is
+ignored, at most three, closest first then file order, none when nothing is
+close, and the same suggestions in every mode. A name under three characters
+gets no edit-distance suggestion, only the tasks it starts
+(`cli-suggest-short-name`), and with `-f` or `-C` the `--list` hint names
+the same Spurfile by its path (`cli-suggest-hint-keeps-spurfile`).
 
-**`discovery-`** (8) — Spurfile found in `$PWD` and by ascending search;
+**`discovery-`** (10) — Spurfile found in `$PWD` and by ascending search,
+which stops at the nearest one (`discovery-nearest-wins`);
 lowercase `spurfile` accepted, with the case tolerating case-insensitive
 filesystems; nothing found is 66; `-C dir` works and a missing dir is 64;
 `-f file` works and a missing file is 66 (not 64 — the codes are distinct on
-purpose).
+purpose); `-C` applies before `-f` resolves (`discovery-flag-C-with-f`).
 
-**`parse-`** (10) — `--list` output format, including column alignment,
+**`parse-`** (29) — `##@` sections in `--list` (empty title, a section with
+no task, only at column zero); `--describe` (the `##` block right above the
+header, a detached block ignored, `###` headings and `####...` banners kept
+out of the block and detaching it, the first task after the preamble, no
+block, unknown task, no task, malformed file, combined flags); `--names`
+(file order, nothing for an empty file, a task name ignored, malformed file,
+combined flags); a Spurfile with CRLF endings runs as if it had LF
+(`parse-crlf-spurfile`). The original ten: `--list` output format, including column alignment,
 descriptions after `##`, tasks with no description, and **file order, not
 alphabetical**; `-l` lists and exits even with a task name after it; a file
 with only comments prints `(no tasks defined)`; a comment at column zero
@@ -42,19 +58,25 @@ between tasks is legal; duplicate task and make-style prerequisites are both
 line is a heredoc terminator left at column zero; an indented line after a
 comment has closed a body is `indented line does not belong to any task`.
 
-**`assembly-`** (7) — the exact generated script for a plain task, for a
-dedented nested block, for a body with internal blank lines (kept) and
+**`assembly-`** (10) — the exact generated script for a plain task, for a
+task with no body (prelude and preamble alone), for a multi-line preamble
+kept verbatim, blank and indented lines included, for a dedented nested block
+(indented with spaces, and with tabs mixed with spaces), for a body with internal blank lines (kept) and
 trailing ones (trimmed), and for a body containing a heredoc whose terminator
 is indented with it; the runner expands nothing; unknown task is 67 and
 suggests `spur --list`; `-n` or `-x` with no task is 64.
 
-**`exec-`** (10) — a task runs and prints; the exit code is propagated
+**`exec-`** (13) — a task runs and prints; a multi-line function from the
+preamble is callable from a body; the exit code is propagated
 unchanged (42 stays 42) and never confused with a runner code; `set -e` aborts
 the body; arguments after the task name pass through untouched, quoting
 preserved; `SPUR_TASK`, `SPUR_ROOT`, `SPUR_INVOCATION_DIR`, `SPUR_BIN` are
 exported correctly; tasks run from the Spurfile's directory, including under
-`-f`; `-` and `.` are legal in task names; stdin stays free for an interactive
-task; a failing command is labelled `spur <task>`.
+`-f`; `-`, `.`, `_` and digits are legal in task names; stdin stays free for an interactive
+task; a failing command is labelled `spur <task>`; the runner works with only
+`sh`, `awk`, `dirname`, `basename` and `cat` on `PATH` (`exec-minimal-path`);
+`sh spur build` resolves `SPUR_BIN` to `./spur`, not to another `spur` on
+`PATH` (`exec-invoked-by-bare-name`).
 
 **`chain-`** (5) — `spur other` inside a body works, forwards arguments, and
 works when the runner was invoked by a relative path from another directory;
@@ -66,58 +88,85 @@ shell's quoting; the preamble is not traced, so preamble values do not leak to
 stderr; `-n` beats `-x` (the script is printed, including `set -x`, and
 nothing runs).
 
-**`harness-`** (1) — exact name beats substring, substring selects a group,
-selecting nothing is 64.
+**`check-`** (12, added 2026-09-24) — `--check` is silent on success, reports
+every task that fails `sh -n` (labelled `spur <task>:` plus a hint to run
+`-n`), reports a broken preamble once and stops, checks a single named task,
+is 67 for an unknown one, runs nothing (not even a `$(...)`), is 64 with `-l`,
+`-n` or `-x`, and passes on an empty Spurfile. Error wording varies by shell
+(busybox reports `line 0`), so the cases only pin the `spur <task>:` prefix.
+An unterminated heredoc, which `sh -n` itself accepts, is 65 with
+`here-document not terminated`, in a task and in the preamble
+(`check-unterminated-heredoc*`); with `-f` or `-C` the `-n` hint names the
+same Spurfile, double-quoted when its path needs it
+(`check-hint-keeps-spurfile`).
+
+**`harness-`** (17, refreshed 2026-09-25) — exact name beats substring,
+substring selects a group, selecting nothing is 64
+(`harness-selects-by-name`); `has`/`lacks` match literally, `capture` reloads
+the output (`harness-helpers-literal-match`); parallel output is alphabetical
+and identical to a serial run, with the workers proven to overlap
+(`harness-parallel-keeps-order`); a failure prints its indented log and exits
+1 (`harness-failure-reported`); `SPUR_TEST_JOBS` validation and cap
+(`harness-jobs-invalid`); the work dir is removed on pass and fail, with a
+space in its path (`harness-cleans-workdir`); stdin is closed
+(`harness-case-stdin-closed`); TERM lets the case in progress finish, starts
+no other and cleans up (`harness-interrupt-stops-workers`); a second TERM
+exits 143 and kills the case in progress and everything it runs, not only
+the workers (`harness-interrupt-twice-stops-workers`, which waits for the
+harness's `.stop` file before the second signal instead of sleeping, and goes
+red against a harness that kills only the workers); a filter with a slash selects
+nothing (`harness-filter-with-slash`); `SPUR_TEST_AWK` picks the awk
+(`harness-awk-selects-implementation`); timings with a clock, the notice
+without one, and no leak of the controls into cases (`harness-times`,
+`harness-times-without-clock`); the benchmark harness fails on a failing or
+measure-less scenario, refuses a bad filter, bad iterations and a missing
+clock (`harness-bench-*`).
 
 ## Confirmed gaps
 
 Each was verified by hand: the behavior works (or fails) as described today,
 and no case pins it.
 
-### 1. `assembly-dedent-tabs` — dedent's reason for existing
+The 2026-09-21 list had six. Four were closed on 2026-09-26, each case
+checked against a runner with the relevant line broken: `assembly-dedent-tabs`,
+`parse-crlf-spurfile`, `discovery-flag-C-with-f`, `assembly-empty-body`. One
+was dropped as vacuous: `assembly-comment-ends-body` (see below). A fifth,
+`discovery-nearest-wins`, was closed on 2026-09-27, checked against a runner
+that keeps climbing and returns the topmost Spurfile (`discovery-find-ascending`
+stays green against that runner, which is why the case was needed). On a
+case-insensitive filesystem such a mutant must not let `spurfile` override a
+`Spurfile` in the same directory, or the old case fails for the wrong reason.
 
-`cprefix` compares leading whitespace as a *string* rather than counting
-characters, specifically so mixed tabs and spaces behave. Every existing case
-indents with spaces. A tab-indented body (verified working, nested block
-included) would pin the behavior the design bothered to get right — and it is
-the natural shape for anyone arriving from a Makefile.
+The last listed gap was closed on 2026-09-27 by `assembly-preamble-verbatim`
+and `exec-preamble-function`. It was wider than first written: every preamble
+in the suite was a single line, so a runner that dropped the preamble's blank
+lines (`spur:162`) or its indented lines (`spur:167`) passed all 104 cases.
+The assembly case catches both mutants; the exec case catches the second.
 
-### 2. `parse-crlf-spurfile` — Windows insurance
+On 2026-09-27 `exec-task-name-characters` also gained `unit_test` and
+`step2`, so digits and `_` in task names are pinned; each goes red against a
+runner whose header regex drops that character.
 
-The parser strips a trailing `\r` from every line, and `.gitattributes` forces
-LF precisely because CRLF would break things. No case writes a CR. A Spurfile
-with CRLF line endings runs correctly today; nothing stops that from
-regressing, and the people who would notice are the ones least able to debug
-it.
+No confirmed gap is open. Also unpinned, and probably fine to leave: three-level recursion renders
+`a -> b -> c -> a` correctly; `die 66 "cannot enter $SPUR_ROOT"`
+is the one diagnostic no case asserts (grep finds "cannot enter" in four
+cases, but those are the cases' own `fail` messages), and it is practically
+unreachable, since the `[ -f ]` before it already needs the directory.
 
-### 3. `discovery-flag-C-with-f` — flag interaction
+### Dropped: `assembly-comment-ends-body`
 
-`-C` applies before `-f` resolves, so `spur -C sub -f custom.spur where` runs
-from `sub` with `sub/custom.spur` (verified). The order is load-bearing and
-untested; the two flags are only ever tested alone.
+A column-zero comment does end a body, but the only lines that can follow it
+before the next header are blank ones (trimmed anyway) or indented ones (65,
+pinned by `parse-indented-line-after-comment`). A `run -n` case would pass
+against a parser that forgot to close the body, so it pins nothing.
 
-### 4. `assembly-empty-body` — a degenerate but legal shape
+### Checking a CRLF case on Windows
 
-A task header with no indented lines assembles to prelude plus preamble and
-exits 0. It is legal, it is not obviously intentional, and a parser change
-could easily turn it into a 65 without anyone noticing.
-
-### 5. `assembly-comment-ends-body`
-
-`parse-comment-between-tasks` proves a column-zero comment does not break
-`--list`, but nothing proves it *terminates the body*. `run -n` on a task
-followed by a comment shows the body stopping at the comment — the actual
-grammar rule, pinned where it is visible.
-
-### 6. `exec-preamble-function` — low priority
-
-The preamble's purpose is shared setup, and a function defined there is
-callable from a body (verified). `trace-skips-preamble` defines one but never
-calls it. Only a variable assignment is actually exercised end to end.
-
-Also unpinned, and probably fine to leave: three-level recursion renders
-`a -> b -> c -> a` correctly; digits and `_` in task names are allowed by the
-grammar but only `-` and `.` are tested.
+MSYS gawk (Git Bash) reads files in text mode and drops the CR itself, so
+`parse-crlf-spurfile` stays green there even with the runner's
+`sub(/\r$/, ...)` removed. To see it go red, run it with an awk in binary
+mode: a wrapper `awk` on `PATH` that execs `gawk -v BINMODE=3 "$@"`. Outside
+MSYS awk does not translate line endings, so the CI jobs check it for real.
 
 ## Harness-level ideas
 
@@ -133,25 +182,58 @@ grammar but only `-` and `.` are tested.
   repository's own `Spurfile`. The failure blames the case rather than the
   setting. Either document the constraint in `CONTRIBUTING.md` or have
   `run.sh` refuse a work directory that has a `Spurfile` above it.
-- **Stdin is inherited by every case.** A case that reads stdin without
-  supplying it would hang the suite, in CI too, with no timeout. Verified: the
-  whole suite passes with stdin closed, and `exec-stdin-is-free` still works
-  because it pipes its input explicitly, so `</dev/null` on the case subshell
-  in `run.sh` would turn a hang into an immediate, readable failure.
-- **Reporting which cases ran.** A green run prints one `ok` per case and a
-  total, which is enough. Resist adding timing, colours or parallelism: the
-  harness is ~80 lines and its readability is a feature.
 
-## Matrix gaps
+## Open: measuring the suite's strength
 
-The suite's only axis of variation is the **shell**. The parser is an awk
-program, and the awk implementation is varied only by accident: CI's Ubuntu
-jobs use mawk and the Alpine job uses busybox awk, while gawk is exercised only
-on developer machines that happen to have it, and BSD awk (macOS) nowhere.
-Adding `macos-latest` to the `shells` matrix covers BSD awk and bash 3.2 in one
-move; a job that installs `gawk` and `original-awk` and runs the suite with
-each one first on `PATH` covers the rest. For a program whose parser is 75
-lines of awk, this is cheaper and catches more than another shell would.
+Deferred on 2026-09-25, to be designed (spec first) in a later session. The
+suite has no measure of how much it would catch; these two would give it one
+without adding a dependency:
+
+- **Diagnostic coverage, automated.** The check described under "Auditing it
+  yourself" (every `err("...")` in `SPUR_PARSER` and every `die` message is
+  asserted by some case) is still done by hand. Scripted, it would turn a new
+  unasserted branch into a red run. The extraction must trim what the
+  message builds at run time: a naive `die [0-9]* "[^"$]*` keeps the space
+  before `$PWD` in `no Spurfile found in $PWD`, and then reports
+  `discovery-not-found`, which does assert it, as a gap.
+- **Light mutation testing.** A script that applies `sed` mutations to a
+  copy of `spur` (flip a comparison, drop a `die`, change an exit code) and
+  requires the suite to go red for each one. That is the "break the line in
+  a throwaway copy" check from the skill, run for the whole file, and it
+  measures the suite's strength where line coverage cannot.
+
+Weighed against a survey of shell-testing practice and turned down, so they
+need not be raised again: bats or ShellSpec (a framework, against the
+zero-dependency rule), a source guard for unit tests (POSIX sh has no
+`BASH_SOURCE`, and `-n`, `--list` and `--names` already expose each stage),
+kcov (bash, zsh and ksh only, and blind to the awk parser), TAP or JUnit
+output, and shfmt or checkbashisms (`shellcheck -s sh` and the matrix
+already catch bashisms).
+
+## The matrix (closed 2026-09-25)
+
+The awk used to vary only by accident. It is now an axis of its own:
+`SPUR_TEST_AWK` in the harness, a CI job per awk (`gawk --posix`, `mawk`,
+`original-awk`) under dash, busybox awk in the Alpine job, and BSD awk with
+bash 3.2 in the `macos-latest` job. Shells not yet in the matrix, if a gap
+ever shows: `posh` and `mksh` (stricter than dash on some points) and
+`yash`, all one `apt-get` away.
+
+A macOS-only failure in the harness can usually be reproduced without a Mac:
+the official `bash:3.2` image carries bash 3.2.57, the same as macOS, and
+`SPUR_TEST_SHELL=bash` makes the `harness-` cases start their fake harness
+with it. On 2026-09-27 that reproduced, and then confirmed the fix for, a
+failure of `harness-interrupt-twice-stops-workers` that only the macOS job
+saw: bash 3.2 ignores a signal that arrives while the trap for that same
+signal is still running.
+
+```sh
+docker run --rm -v "$PWD:/work" -w /work bash:3.2 \
+  sh -c 'apk add --no-cache diffutils >/dev/null && SPUR_TEST_SHELL=bash sh tests/run.sh harness-'
+```
+
+It does not stand in for the macOS job: the awk, `ps` and the other
+utilities there are BSD, and in the image they are busybox.
 
 ## Not worth testing
 
