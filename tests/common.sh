@@ -1,6 +1,6 @@
 # Shared by the behavior harness (tests/run.sh) and the benchmark harness
 # (tests/bench/run.sh). Sourced, never run.
-# shellcheck disable=SC2034  # $names, $count, $clock and $ms are read by the harnesses
+# shellcheck disable=SC2034  # $names, $count, $workdir, $clock and $ms are read by the harnesses
 
 # select_names DIR FILTER [EXCLUDE] -- set $names to the selected script names
 # in DIR (file names without .sh, space-separated, in glob order, which is
@@ -28,6 +28,17 @@ select_names() {
         ;;
     esac
   done
+}
+
+# work_dir NAME -- set $workdir to NAME.PID under SPUR_TEST_TMPDIR (default
+# /tmp), as an absolute path: every case and scenario runs from a directory
+# of its own, where a relative one would name something else.
+work_dir() {
+  workdir=${SPUR_TEST_TMPDIR:-/tmp}/$1.$$
+  case $workdir in
+    /*) ;;
+    *) workdir=$PWD/$workdir ;;
+  esac
 }
 
 # positive_int NAME VALUE -- exit 64 unless VALUE is a positive integer.

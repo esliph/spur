@@ -22,7 +22,7 @@
 #   SPUR_TEST_AWK       awk the runner runs with, words split on spaces and
 #                       no quoting: gawk --posix, mawk, busybox awk
 #                       (default: the awk on PATH)
-# shellcheck disable=SC2154  # $names, $count, $clock and $ms come from tests/common.sh
+# shellcheck disable=SC2154  # $names, $count, $workdir, $clock and $ms come from tests/common.sh
 
 case $0 in
   */*) here=${0%/*} ;;
@@ -32,10 +32,10 @@ root=$(cd "$here/.." && pwd)
 runner=$root/spur
 shell_under_test=${SPUR_TEST_SHELL:-sh}
 filter=${1:-}
-workdir=${SPUR_TEST_TMPDIR:-/tmp}/spur-tests.$$
 
 # shellcheck source=tests/common.sh
 . "$root/tests/common.sh"
+work_dir spur-tests
 
 # SPUR_TEST_JOBS is a positive integer; empty means unset.
 if [ -n "${SPUR_TEST_JOBS:-}" ]; then

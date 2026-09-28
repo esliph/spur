@@ -29,7 +29,7 @@
 #
 # Exit status: 0 every scenario ran, 1 one failed, 64 usage error, 69 no
 # sub-second clock, 70 the work directory could not be created.
-# shellcheck disable=SC2154  # $names, $count, $clock and $ms come from tests/common.sh
+# shellcheck disable=SC2154  # $names, $count, $workdir, $clock and $ms come from tests/common.sh
 
 case $0 in
   */*) here=${0%/*} ;;
@@ -39,10 +39,10 @@ root=$(cd "$here/../.." && pwd)
 runner=$root/spur
 shell_under_test=${SPUR_TEST_SHELL:-sh}
 filter=${1:-}
-workdir=${SPUR_TEST_TMPDIR:-/tmp}/spur-bench.$$
 
 # shellcheck source=tests/common.sh
 . "$root/tests/common.sh"
+work_dir spur-bench
 
 iterations=${SPUR_BENCH_ITERATIONS:-10}
 positive_int SPUR_BENCH_ITERATIONS "$iterations"
