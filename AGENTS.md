@@ -33,7 +33,10 @@ CI (`.github/workflows/ci.yml`) runs shellcheck (pinned to 0.11.0) plus the
 suite under `sh`, `dash`, `bash`, busybox ash (Alpine in Docker) and macOS
 (bash 3.2, BSD awk), then under dash once per awk (`gawk --posix`, `mawk`,
 `original-awk`), and runs every benchmark scenario once so none rots. Nothing is skipped locally that CI will not
-catch, but `dash` catches almost everything.
+catch, but `dash` catches almost everything. On a push to `master`, once
+every other job is green, its `release` job runs `./spur publish`, which
+tags and publishes the version in `SPUR_VERSION` unless it is already
+tagged; see *Releasing* in `CONTRIBUTING.md`.
 
 ## Architecture
 
@@ -163,4 +166,7 @@ script.
 
 `README.md` is the user-facing contract (language, CLI, exit codes, the
 make→spur mapping, and the six known limitations). Behavior changes usually
-need it updated in the same commit. `CONTRIBUTING.md` holds the testing rules.
+need it updated in the same commit. `CONTRIBUTING.md` holds the testing rules
+and the release process. `CHANGELOG.md` is where a user-visible change is
+written down, under *Unreleased*, in the same commit; it is the source of
+the release notes.
