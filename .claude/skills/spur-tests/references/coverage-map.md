@@ -23,8 +23,9 @@ each message. A message no case asserts is a branch no case reaches.
 
 ## What each group pins
 
-**`cli-`** (13) — `-h`/`--help` shows usage; `-v`/`--version` matches
-`spur N.N.N`; an unknown option is 64, and `-xn` is an unknown option, not
+**`cli-`** (14) — `-h`/`--help` shows usage; `-v`/`--version` matches
+`spur N.N.N`, and the README shows that same line
+(`cli-version-matches-readme`, which reads `$root/README.md`); an unknown option is 64, and `-xn` is an unknown option, not
 `-x -n` (short flags deliberately do not group); `-f` and `-C` without an
 argument are 64. The `cli-suggest-*` cases pin the `did you mean` line of an
 unknown task: typos, transpositions and prefixes are suggested, case is

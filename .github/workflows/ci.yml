@@ -81,3 +81,22 @@ jobs:
       - name: Run every scenario once
         # Keeps the scenarios from rotting; the numbers are not checked.
         run: SPUR_BENCH_ITERATIONS=1 SPUR_TEST_SHELL=dash sh tests/bench/run.sh
+
+  release:
+    # Merging a pull request that changes SPUR_VERSION publishes that
+    # version; any other push to master finds its tag and does nothing.
+    name: release
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    needs: [lint, shells, awk, macos, busybox, bench]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency: release
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tag and publish the release
+        run: ./spur publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GIT_COMMITTER_NAME: github-actions[bot]
+          GIT_COMMITTER_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
