@@ -373,7 +373,7 @@ called from.
 | `SPUR_ROOT`           | the Spurfile's directory (= the task's working directory) |
 | `SPUR_INVOCATION_DIR` | the directory you called from                             |
 | `SPUR_TASK`           | the running task's name                                   |
-| `SPUR_STACK`          | the call chain, used by the recursion guard               |
+| `SPUR_STACK`          | the call chain, one `task spurfile-path` frame per line   |
 
 Every other variable reaches the task as the caller left it, except names
 that start with `SPUR_` or `spur_`: those belong to spur.
