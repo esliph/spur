@@ -89,6 +89,32 @@ its own temporary directory, prepares what it needs, and calls
 then `SPUR_BENCH_ITERATIONS` (default 10) timed times, output discarded; if
 any run fails, the scenario fails with the runner's stderr.
 
+## Releasing
+
+A user-visible change goes into `CHANGELOG.md`, under *Unreleased*, in the
+same commit or pull request. A release is then two steps:
+
+```sh
+./spur release 0.3.0   # on develop, clean and pushed
+```
+
+`spur release` refuses a version that is not `X.Y.Z` or does not follow the
+current one, a branch other than `develop`, uncommitted changes, a `develop`
+that differs from `origin/develop`, an existing tag and an empty
+*Unreleased*. It runs `spur --check`, sets the version in `spur` and in
+the README, turns *Unreleased* into `## [0.3.0] - <today>` with its
+compare link, commits `chore(release): 0.3.0`, pushes `develop` and opens
+the pull request into `master` with the release notes as its body, printing
+a line before each step. It does not run lint or the tests: CI runs both on
+the pull request, and nothing is published until they pass on `master`. `spur release-notes 0.3.0` prints those notes on their own.
+
+Merging that pull request is the release. On `master`, once every CI job is
+green, the `release` job runs `spur publish`: it tags the merge commit
+`v0.3.0` and publishes the GitHub release, with the runner as its asset and
+the notes as its body. A push to `master` whose version is already tagged
+publishes nothing. `cli-version-matches-readme` fails when the README and
+`spur -v` disagree.
+
 ## Rules
 
 - Strict POSIX sh. No bashisms. `shellcheck -s sh` must pass clean.

@@ -2,6 +2,7 @@
 # design is wrong and we find out in the first week.
 HARNESS=tests/run.sh
 BENCH=tests/bench/run.sh
+REPO=https://github.com/esliph/spur
 SOURCES="spur tests/run.sh tests/lib.sh tests/common.sh tests/bench/*.sh"
 
 ## Arguments go to the harness: a case name runs just that case, and a name
@@ -40,3 +41,126 @@ check: ## check the Spurfile, lint and test
   spur --check
   spur lint
   spur test
+
+## Prints the CHANGELOG.md section of a version followed by the install
+## instructions for its tag: the body of its GitHub release. CI runs it to
+## publish, and it fails when the version has no section or an empty one.
+##   spur release-notes 0.3.0
+release-notes: ## print the release notes of a version
+  version=${1:?usage: spur release-notes X.Y.Z}
+  notes=$(awk -v heading="## [$version] - " '
+    /^## \[/ { on = index($0, heading) == 1; if (on) head = $0; next }
+    /^\[[^]]*\]: / { next }
+    on && $0 == "" { blank++; next }
+    on {
+      if (n) while (blank > 0) { body[++n] = ""; blank-- }
+      blank = 0
+      body[++n] = $0
+    }
+    END {
+      if (!n) exit 1
+      print head; print ""
+      for (i = 1; i <= n; i++) print body[i]
+    }' CHANGELOG.md) || {
+    printf 'spur release-notes: CHANGELOG.md has no section for %s, or it is empty\n' "$version" >&2
+    exit 1
+  }
+  printf '%s\n\n### Install\n\n' "$notes"
+  printf '```sh\ncurl -fsSL %s/v%s/spur %s\n  -o ~/.local/bin/spur && chmod +x ~/.local/bin/spur\n```\n\n' \
+    "https://raw.githubusercontent.com/esliph/spur" "$version" '\'
+  printf 'Or download `spur` from the assets below and `chmod +x` it, or vendor it by copying the file into your repository.\n\n'
+  awk -v ref="[$version]: " 'index($0, ref) == 1' CHANGELOG.md
+
+## Prepares a release from develop. Checks that the version follows the
+## current one, that develop is clean and pushed and that CHANGELOG.md has
+## something under Unreleased, and checks the Spurfile. Then it sets the
+## version in the runner and the README, dates the Unreleased section,
+## commits, pushes develop and opens the pull request into master. It
+## does not run the tests: nothing is published until the whole CI matrix
+## is green on master. Merging that pull request publishes the release.
+##   spur release 0.3.0
+release: ## prepare a release and open its pull request
+  version=${1:?usage: spur release X.Y.Z}
+  fail() { printf 'spur release: %s\n' "$*" >&2; exit 1; }
+  step() { printf 'spur release: %s\n' "$*"; }
+  step "checking $version against the repository"
+  printf '%s\n' "$version" | grep -Eqx '[0-9]+\.[0-9]+\.[0-9]+' ||
+    fail "$version is not X.Y.Z"
+  current=$(sh spur -v)
+  current=${current#spur }
+  awk -v a="$current" -v b="$version" 'BEGIN {
+    split(a, x, "."); split(b, y, ".")
+    for (i = 1; i <= 3; i++) if (y[i] + 0 != x[i] + 0) exit y[i] + 0 < x[i] + 0
+    exit 1
+  }' || fail "$version does not follow the current version, $current"
+  [ "$(git rev-parse --abbrev-ref HEAD)" = develop ] ||
+    fail "a release is cut from develop"
+  [ -z "$(git status --porcelain)" ] ||
+    fail "the working tree has uncommitted changes"
+  step "fetching develop and the tags from origin"
+  git fetch --quiet --tags origin develop
+  [ "$(git rev-parse HEAD)" = "$(git rev-parse origin/develop)" ] ||
+    fail "develop and origin/develop differ"
+  if git rev-parse -q --verify "refs/tags/v$version" >/dev/null; then
+    fail "v$version is already tagged"
+  fi
+  awk '
+    /^## \[/ { on = $0 == "## [Unreleased]"; next }
+    /^\[[^]]*\]: / { next }
+    on && NF { found = 1 }
+    END { exit !found }' CHANGELOG.md ||
+    fail "CHANGELOG.md has nothing under Unreleased"
+  # Neither lint nor the tests: shellcheck may be missing here, a run of
+  # the suite takes the better part of a minute, and the release job on
+  # master waits for both in every shell and awk anyway.
+  step "checking the Spurfile"
+  spur --check
+
+  step "setting the version to $version"
+  # cat, not mv, so the runner keeps its execute bit.
+  sed "s/^SPUR_VERSION=.*/SPUR_VERSION=$version/" spur > spur.new
+  cat spur.new > spur && rm spur.new
+  sed "s/^spur $current\$/spur $version/" README.md > README.md.new
+  mv README.md.new README.md
+  awk -v v="$version" -v prev="$current" -v date="$(date +%Y-%m-%d)" \
+      -v repo="$REPO" '
+    $0 == "## [Unreleased]" { print; print ""; print "## [" v "] - " date; next }
+    index($0, "[Unreleased]: ") == 1 {
+      print "[Unreleased]: " repo "/compare/v" v "...HEAD"
+      print "[" v "]: " repo "/compare/v" prev "...v" v
+      next
+    }
+    { print }' CHANGELOG.md > CHANGELOG.md.new
+  mv CHANGELOG.md.new CHANGELOG.md
+  [ "$(sh spur -v)" = "spur $version" ] || fail "the runner still says $(sh spur -v)"
+  # What cli-version-matches-readme checks, without starting the harness.
+  grep -qxF "spur $version" README.md || fail "README.md does not show spur $version"
+  spur release-notes "$version" >/dev/null
+
+  step "committing chore(release): $version"
+  git commit --quiet -am "chore(release): $version"
+  step "pushing develop"
+  git push --quiet origin develop
+  step "opening the pull request into master"
+  spur release-notes "$version" |
+    gh pr create --base master --head develop --title "Release $version" --body-file -
+
+## Tags the version the runner declares and publishes its GitHub release,
+## with the runner as the asset and release-notes as the body. A version
+## already tagged is left alone, so every push to master can run it: CI
+## does, once every other job is green, and it is what makes merging the
+## release pull request publish the release.
+publish: ## tag and publish the runner's version, unless it is already out
+  version=$(sh spur -v)
+  version=${version#spur }
+  git fetch --quiet --tags origin
+  if git rev-parse -q --verify "refs/tags/v$version" >/dev/null; then
+    printf 'spur publish: v%s is already released\n' "$version"
+    exit 0
+  fi
+  notes=$(spur release-notes "$version")
+  git tag -a "v$version" -m "spur $version"
+  git push --quiet origin "v$version"
+  printf '%s\n' "$notes" |
+    gh release create "v$version" spur --verify-tag \
+      --title "spur $version" --notes-file -

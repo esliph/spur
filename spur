@@ -9,7 +9,7 @@
 # the runner's environment, so any other name would overwrite a variable of
 # the same name the caller exported.
 
-SPUR_VERSION=0.2.0
+SPUR_VERSION=0.3.0
 
 # --------------------------------------------------------------- diagnostics
 
