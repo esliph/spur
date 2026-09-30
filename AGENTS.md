@@ -45,12 +45,16 @@ The runner is four sequential stages inside one file, in this order:
    case-insensitive). The process then `cd`s to the Spurfile's directory, so
    every task runs from there.
 2. **Parsing** — `SPUR_PARSER`, a single awk program held in a single-quoted
-   shell string, with five modes selected by `-v mode=`: `list`, `names`,
-   `preamble`, `body`, `describe`. It emits diagnostics on **stdout** and carries meaning in the exit
+   shell string, with four modes selected by `-v mode=`: `list`, `names`,
+   `sections`, `describe`. It emits diagnostics on **stdout** and carries meaning in the exit
    status (65 malformed, 67 unknown task) because `/dev/stderr` is not portable
    across awk implementations. `run_parser` must stay a function writing to the
    global `SPUR_PARSER_OUT` — wrapping it in a command substitution would
-   swallow the exit status the caller needs.
+   swallow the exit status the caller needs. A run, and a `--check` of every
+   task, parse the Spurfile once: `sections` emits the preamble and the
+   wanted bodies in one output, split by a marker line it picks so that no
+   other line starts with it (`assembly-separator-collision`), and
+   `load_sections`/`next_section` take it apart with parameter expansion.
 3. **Assembly** — `build_script` concatenates `SPUR_PRELUDE` (`set -e` plus an
    injected `spur()` function pointing at `$SPUR_BIN`), then the preamble, then
    optionally `PS4`/`set -x`, then the dedented body.
