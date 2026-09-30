@@ -10,6 +10,10 @@ section for the version, with the install instructions added.
 
 ## [Unreleased]
 
+### Fixed
+
+- The recursion guard tells tasks apart by their Spurfile as well as their name: `install` calling `spur -C sub install` no longer exits 68, while a real recursion is still caught across Spurfiles and through a symlinked directory. `SPUR_STACK` now holds one frame per line, the task name and the physical path of its Spurfile.
+
 ## [0.3.0] - 2026-09-30
 
 ### Changed

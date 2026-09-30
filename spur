@@ -607,14 +607,27 @@ fi
 
 SPUR_TASK=$spur_task
 
-case " ${SPUR_STACK:-} " in
-  *" $spur_task "*)
+# A frame of SPUR_STACK is one line: the task name, a space, and the
+# Spurfile's physical path, so that a task of the same name in another
+# Spurfile is not taken for a recursion, and a symlink does not hide one. A
+# task name has no space, so the first one ends it. The directory goes
+# through cd -P rather than pwd -P, which would need a subshell.
+cd -P . || die 66 "cannot enter $SPUR_ROOT"
+spur_frame="$spur_task $PWD/${SPUR_FILE##*/}"
+cd "$SPUR_ROOT" || die 66 "cannot enter $SPUR_ROOT"
+spur_nl='
+'
+
+case "$spur_nl${SPUR_STACK:-}$spur_nl" in
+  *"$spur_nl$spur_frame$spur_nl"*)
     spur_chain=
-    # shellcheck disable=SC2086
-    for spur_frame in ${SPUR_STACK:-}; do
-      spur_chain=${spur_chain:+$spur_chain -> }$spur_frame
+    spur_rest=$SPUR_STACK$spur_nl
+    while [ -n "$spur_rest" ]; do
+      spur_line=${spur_rest%%"$spur_nl"*}
+      spur_rest=${spur_rest#*"$spur_nl"}
+      spur_chain="$spur_chain${spur_line%% *} -> "
     done
-    die 68 "recursion detected: ${spur_chain:+$spur_chain -> }$spur_task"
+    die 68 "recursion detected: $spur_chain$spur_task"
     ;;
 esac
 
@@ -628,7 +641,7 @@ if [ -n "$spur_dry_opt" ]; then
   exit 0
 fi
 
-SPUR_STACK=${SPUR_STACK:+$SPUR_STACK }$spur_task
+SPUR_STACK=${SPUR_STACK:+$SPUR_STACK$spur_nl}$spur_frame
 export SPUR_BIN SPUR_ROOT SPUR_INVOCATION_DIR SPUR_TASK SPUR_STACK
 
 exec sh -c "$spur_script" "spur $spur_task" "$@"

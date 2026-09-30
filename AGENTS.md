@@ -79,9 +79,12 @@ Things that follow from that structure and are easy to break:
   name; everything after it is the task's, untouched. `spur -n test` is a dry
   run, `spur test -n` passes `-n` as `"$1"`. Short flags are deliberately not
   groupable.
-- **Recursion guard**: `SPUR_STACK` is a space-separated chain exported to
-  children; a task already in it exits 68. Repeated (non-recursive) calls are
-  allowed — a task legitimately runs more than once without a graph.
+- **Recursion guard**: `SPUR_STACK` is the chain exported to children, one
+  frame per line: the task name, a space, and the physical path of its
+  Spurfile. A task already in it *for the same Spurfile* exits 68; the same
+  name in another Spurfile (`spur -C sub install` from `install`) is another
+  task. Repeated (non-recursive) calls are allowed — a task legitimately runs
+  more than once without a graph.
 - **Exit codes** use the sysexits range so they never collide with a task's
   own, which is propagated unchanged: 64 usage, 65 malformed Spurfile,
   66 Spurfile not found, 67 unknown task, 68 recursion.

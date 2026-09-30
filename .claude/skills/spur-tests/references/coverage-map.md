@@ -79,10 +79,12 @@ task; a failing command is labelled `spur <task>`; the runner works with only
 `sh spur build` resolves `SPUR_BIN` to `./spur`, not to another `spur` on
 `PATH` (`exec-invoked-by-bare-name`).
 
-**`chain-`** (5) — `spur other` inside a body works, forwards arguments, and
+**`chain-`** (8) — `spur other` inside a body works, forwards arguments, and
 works when the runner was invoked by a relative path from another directory;
 calling the same task twice is allowed (no graph, no dedup); mutual recursion
-is 68 with the chain rendered `a -> b -> a`.
+is 68 with the chain rendered `a -> b -> a`, also when the chain crosses
+Spurfiles or goes through a symlinked directory; the same task name in another
+Spurfile is not a recursion.
 
 **`trace-`** (3) — `-x` traces the body with a lean `PS4`, accepting either
 shell's quoting; the preamble is not traced, so preamble values do not leak to
