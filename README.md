@@ -124,7 +124,8 @@ curl -fsSL https://raw.githubusercontent.com/esliph/spur/master/spur \
 ```
 
 A specific version: the URL takes any git ref, so put a tag from [the tag
-list](https://github.com/esliph/spur/tags) in place of `<tag>`.
+list](https://github.com/esliph/spur/tags) in place of `<tag>`. What each
+version changed is in [`CHANGELOG.md`](CHANGELOG.md).
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/esliph/spur/<tag>/spur \
