@@ -10,6 +10,12 @@ section for the version, with the install instructions added.
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-09-30
+
+### Fixed
+
+- The recursion guard tells tasks apart by their Spurfile as well as their name: `install` calling `spur -C sub install` no longer exits 68, while a real recursion is still caught across Spurfiles and through a symlinked directory. `SPUR_STACK` now holds one frame per line, the task name and the physical path of its Spurfile.
+
 ## [0.3.0] - 2026-09-30
 
 ### Changed
@@ -70,7 +76,8 @@ The scope is deliberate: spur runs tasks, it does not build software — no depe
 - Documentation: `README.md` as the user-facing contract (the language, the CLI, the exit codes, the make → spur mapping and the known limitations), `CONTRIBUTING.md` for the testing rules, and an MIT `LICENSE`.
 - A behavior suite of 48 cases under `tests/`, run by a dependency-free harness, plus CI running `shellcheck -s sh` and the suite under `sh`, `dash`, `bash` and busybox `ash`. Green on this tag.
 
-[Unreleased]: https://github.com/esliph/spur/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/esliph/spur/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/esliph/spur/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/esliph/spur/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/esliph/spur/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/esliph/spur/releases/tag/v0.1.0
