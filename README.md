@@ -137,7 +137,7 @@ curl -fsSL https://raw.githubusercontent.com/esliph/spur/<tag>/spur \
 
 ```sh
 $ spur -v
-spur 0.2.0
+spur 0.3.0
 ```
 
 Upgrading is the same command with another ref, and uninstalling is
