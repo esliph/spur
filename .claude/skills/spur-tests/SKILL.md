@@ -61,7 +61,7 @@ and freely uses `grep`, `sed`, `diff`, `sort`, `mkdir`, `rm`.
 `assert_stdout_is` is built on `diff -u` on purpose. A case rewritten to obey
 the runner's diet is a case made worse for no reason.
 The runner's diet is pinned by `exec-minimal-path`, which runs it with only
-`sh`, `awk`, `dirname`, `basename` and `cat` on `PATH`.
+`sh`, `awk` and `cat` on `PATH`.
 
 ## Running
 

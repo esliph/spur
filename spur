@@ -55,41 +55,60 @@ EOF
 
 # ------------------------------------------------------------------ locating
 
-# Absolute path of this script. Must run before any directory change.
+# Paths are taken apart with parameter expansion rather than dirname and
+# basename, and results are left in globals rather than printed into a
+# command substitution: every process started here is paid on every run, and
+# again by every spur a task calls.
+
+# abs_path FILE -- leaves the absolute path of FILE in the global
+# "spur_abs". The directory goes through cd, so it is resolved as before.
+abs_path() {
+  case $1 in
+    */*) spur_abs=$(cd "${1%/*}/" && pwd) ;;
+    *) spur_abs=$PWD ;;
+  esac
+  spur_abs=$spur_abs/${1##*/}
+}
+
+# resolve_self -- leaves the absolute path of this script in SPUR_BIN. Must
+# run before any directory change.
 resolve_self() {
   case $0 in
     */*)
-      printf '%s/%s\n' "$(cd "$(dirname "$0")" && pwd)" "$(basename "$0")"
+      abs_path "$0"
       ;;
     *)
       # "sh spur" opens ./spur before searching PATH, so a file of that name
       # here is the one running; PATH is only asked when there is none.
       if [ -f "$0" ]; then
-        printf '%s/%s\n' "$PWD" "$0"
-        return 0
+        spur_abs=$PWD/$0
+      else
+        spur_self=$(command -v -- "$0" 2>/dev/null) || spur_self=$0
+        case $spur_self in
+          /*) spur_abs=$spur_self ;;
+          *) abs_path "$spur_self" ;;
+        esac
       fi
-      spur_self=$(command -v -- "$0" 2>/dev/null) || spur_self=$0
-      case $spur_self in
-        /*) printf '%s\n' "$spur_self" ;;
-        *) printf '%s/%s\n' "$(cd "$(dirname "$spur_self")" && pwd)" "$(basename "$spur_self")" ;;
-      esac
       ;;
   esac
+  SPUR_BIN=$spur_abs
 }
 
-# Print the nearest Spurfile, searching upwards from the current directory.
+# find_spurfile -- leaves the nearest Spurfile, searching upwards from the
+# current directory, in SPUR_FILE; returns 1 when there is none.
 find_spurfile() {
   spur_dir=$PWD
   while :; do
     if [ -f "$spur_dir/Spurfile" ]; then
-      printf '%s/Spurfile\n' "$spur_dir"
+      SPUR_FILE=$spur_dir/Spurfile
       return 0
     fi
     if [ -f "$spur_dir/spurfile" ]; then
-      printf '%s/spurfile\n' "$spur_dir"
+      SPUR_FILE=$spur_dir/spurfile
       return 0
     fi
-    spur_parent=$(dirname "$spur_dir")
+    spur_parent=${spur_dir%/*}
+    spur_parent=${spur_parent:-/}
     [ "$spur_parent" = "$spur_dir" ] && return 1
     spur_dir=$spur_parent
   done
@@ -99,9 +118,13 @@ find_spurfile() {
 
 # The Spurfile parser. Modes:
 #   list      one formatted line per task, under its ##@ section heading
-#   preamble  every line before the first task header
 #   names     one task name per line, in file order
-#   body      the dedented body of the task named by "want"
+#   sections  a marker line, the preamble (every line before the first task
+#             header, trailing empty lines dropped), then for the task named
+#             by "want", or for every task when "want" is empty, the marker,
+#             a space and the task name on one line and its dedented body
+#             after it. The marker is "#spur" plus as many "-" as it takes
+#             for no other line of the output to start with it.
 #   describe  the header description of "want", then the ## block right
 #             above its header, without the leading "##" and one space; a
 #             line of three or more # is an ordinary comment
@@ -158,17 +181,35 @@ function unknown(   w, lim, i, j, k, n, best, out, cand, cd, used) {
   if (out != "") printf "did you mean: %s?\n", out
   exit 67
 }
-BEGIN { started = 0; in_body = 0; capturing = 0; found = 0; nb = 0; npre = 0; nt = 0; nd = 0; dend = -1; maxlen = 0; cursec = "Tasks" }
+# Dedent the body of task t into out[] after the lines already there:
+# trailing blank lines dropped, the common leading whitespace removed, and
+# blank lines emptied.
+function dedent(t,   nb, i, pfx, first, n) {
+  nb = bn[t]
+  while (nb > 0 && body[t, nb] ~ /^[ \t]*$/) nb--
+  pfx = ""; first = 1
+  for (i = 1; i <= nb; i++) {
+    if (body[t, i] ~ /^[ \t]*$/) continue
+    if (first) { pfx = ws(body[t, i]); first = 0 }
+    else pfx = cprefix(pfx, ws(body[t, i]))
+  }
+  n = length(pfx)
+  for (i = 1; i <= nb; i++) {
+    if (body[t, i] ~ /^[ \t]*$/) out[++no] = ""
+    else out[++no] = substr(body[t, i], n + 1)
+  }
+}
+BEGIN { started = 0; in_body = 0; capturing = 0; found = 0; npre = 0; nt = 0; ns = 0; nd = 0; dend = -1; maxlen = 0; cursec = "Tasks" }
 {
   line = $0
   sub(/\r$/, "", line)
   if (line ~ /^[ \t]*$/) {
-    if (in_body) { if (capturing) body[++nb] = line }
+    if (in_body) { if (capturing) body[nt, ++bn[nt]] = line }
     else if (!started) pre[++npre] = line
     next
   }
   if (line ~ /^[ \t]/) {
-    if (in_body) { if (capturing) body[++nb] = line; next }
+    if (in_body) { if (capturing) body[nt, ++bn[nt]] = line; next }
     if (!started) { pre[++npre] = line; next }
     err("indented line does not belong to any task")
   }
@@ -196,8 +237,8 @@ BEGIN { started = 0; in_body = 0; capturing = 0; found = 0; nb = 0; npre = 0; nt
     tname[++nt] = name; tdesc[nt] = desc; tsec[nt] = cursec
     if (length(name) > maxlen) maxlen = length(name)
     started = 1; in_body = 1
-    capturing = (mode == "body" && name == want)
-    if (capturing) found = 1
+    capturing = (mode == "sections" && (want == "" || name == want))
+    if (capturing) { found = 1; sel[++ns] = nt; bn[nt] = 0 }
     if (mode == "describe" && name == want) {
       found = 1; wdesc = desc; wnd = 0
       if (dend == NR - 1) for (i = 1; i <= nd; i++) wdoc[++wnd] = doc[i]
@@ -234,23 +275,26 @@ END {
     for (i = first; i <= wnd; i++) print wdoc[i]
     exit 0
   }
-  if (mode == "preamble") {
-    for (i = 1; i <= npre; i++) print pre[i]
-    exit 0
-  }
-  if (mode == "body") {
-    if (!found) unknown()
-    while (nb > 0 && body[nb] ~ /^[ \t]*$/) nb--
-    pfx = ""; first = 1
-    for (i = 1; i <= nb; i++) {
-      if (body[i] ~ /^[ \t]*$/) continue
-      if (first) { pfx = ws(body[i]); first = 0 }
-      else pfx = cprefix(pfx, ws(body[i]))
-    }
-    n = length(pfx)
-    for (i = 1; i <= nb; i++) {
-      if (body[i] ~ /^[ \t]*$/) print ""
-      else print substr(body[i], n + 1)
+  if (mode == "sections") {
+    if (want != "" && !found) unknown()
+    while (npre > 0 && pre[npre] == "") npre--
+    # out[] holds every line to print, the preamble first; the body of the
+    # j-th selected task is out[st[j]] up to, not including, out[st[j + 1]].
+    no = 0
+    for (i = 1; i <= npre; i++) out[++no] = pre[i]
+    for (j = 1; j <= ns; j++) { st[j] = no + 1; dedent(sel[j]) }
+    st[ns + 1] = no + 1
+    mark = "#spur"
+    do {
+      clash = 0
+      for (i = 1; i <= no && !clash; i++) if (index(out[i], mark) == 1) clash = 1
+      if (clash) mark = mark "-"
+    } while (clash)
+    print mark
+    for (i = 1; i <= npre; i++) print out[i]
+    for (j = 1; j <= ns; j++) {
+      print mark " " tname[sel[j]]
+      for (i = st[j]; i < st[j + 1]; i++) print out[i]
     }
     exit 0
   }
@@ -389,7 +433,7 @@ fi
 
 # ---------------------------------------------------------------------- setup
 
-SPUR_BIN=$(resolve_self)
+resolve_self
 SPUR_INVOCATION_DIR=$PWD
 
 if [ -n "$spur_chdir_opt" ]; then
@@ -398,13 +442,16 @@ fi
 
 if [ -n "$spur_file_opt" ]; then
   [ -f "$spur_file_opt" ] || die 66 "$spur_file_opt: no such file"
-  SPUR_FILE=$(cd "$(dirname "$spur_file_opt")" && pwd)/$(basename "$spur_file_opt")
+  abs_path "$spur_file_opt"
+  SPUR_FILE=$spur_abs
 else
-  SPUR_FILE=$(find_spurfile) ||
+  find_spurfile ||
     die 66 "no Spurfile found in $PWD or any parent directory"
 fi
 
-SPUR_ROOT=$(dirname "$SPUR_FILE")
+# SPUR_FILE is absolute, so it has a slash; a Spurfile at / leaves "".
+SPUR_ROOT=${SPUR_FILE%/*}
+SPUR_ROOT=${SPUR_ROOT:-/}
 cd "$SPUR_ROOT" || die 66 "cannot enter $SPUR_ROOT"
 
 # The command the hints tell the user to run. With -f or -C it names the
@@ -427,24 +474,59 @@ SPUR_NL='
 '
 spur_script=
 spur_head=
+spur_preamble=
+spur_sections=
+spur_name=
+spur_body=
+
+# load_sections WANT -- run the parser once in sections mode, for the task
+# WANT or, when WANT is empty, for every task. Leaves the preamble in
+# "spur_preamble" and the tasks, still marked, in "spur_sections", for
+# next_section to take off one at a time. The marker is quoted in every
+# pattern, so nothing in the Spurfile is ever matched or expanded.
+load_sections() {
+  run_parser sections "$1" || parser_error $?
+  spur_mark=${SPUR_PARSER_OUT%%"$SPUR_NL"*}
+  spur_sep=$SPUR_NL$spur_mark' '
+  spur_sections=${SPUR_PARSER_OUT#"$spur_mark"}
+  spur_preamble=${spur_sections%%"$spur_sep"*}
+  spur_preamble=${spur_preamble#"$SPUR_NL"}
+  case $spur_sections in
+    *"$spur_sep"*) spur_sections=${spur_sections#*"$spur_sep"} ;;
+    *) spur_sections= ;;
+  esac
+}
+
+# next_section -- take the first task off "spur_sections", leaving its name
+# in "spur_name" and its body in "spur_body". Returns 1 when none is left.
+next_section() {
+  [ -n "$spur_sections" ] || return 1
+  spur_body=${spur_sections%%"$spur_sep"*}
+  spur_name=${spur_body%%"$SPUR_NL"*}
+  spur_body=${spur_body#"$spur_name"}
+  spur_body=${spur_body#"$SPUR_NL"}
+  case $spur_sections in
+    *"$spur_sep"*) spur_sections=${spur_sections#*"$spur_sep"} ;;
+    *) spur_sections= ;;
+  esac
+}
 
 # build_head -- leaves the prelude, the preamble and the trace setup in the
 # global "spur_head", the part of the script that is the same for every task.
+# Needs load_sections first.
 build_head() {
-  run_parser preamble "" || parser_error $?
   spur_head=$SPUR_PRELUDE
-  [ -z "$SPUR_PARSER_OUT" ] || spur_head=$spur_head$SPUR_NL$SPUR_PARSER_OUT
+  [ -z "$spur_preamble" ] || spur_head=$spur_head$SPUR_NL$spur_preamble
   if [ -n "$spur_trace_opt" ]; then
     spur_head=$spur_head$SPUR_NL"PS4='\$ '"$SPUR_NL'set -x'
   fi
 }
 
-# build_script TASK -- leaves the assembled script in the global
-# "spur_script". Needs build_head first.
+# build_script -- leaves the assembled script of the task next_section took
+# in the global "spur_script". Needs build_head first.
 build_script() {
-  run_parser body "$1" || parser_error $?
   spur_script=$spur_head
-  [ -z "$SPUR_PARSER_OUT" ] || spur_script=$spur_script$SPUR_NL$SPUR_PARSER_OUT
+  [ -z "$spur_body" ] || spur_script=$spur_script$SPUR_NL$spur_body
 }
 
 # sh_check LABEL SCRIPT -- parse SCRIPT with sh -n, which runs nothing,
@@ -465,31 +547,27 @@ sh_check() {
 
 spur_check_failed=
 
-# check_task TASK -- syntax-check the assembled script of TASK.
+# check_task -- syntax-check the assembled script of the task next_section
+# took.
 check_task() {
-  build_script "$1"
-  if ! sh_check "spur $1" "$spur_script"; then
-    printf "spur: run '%s -n %s' to see the assembled script\n" "$SPUR_HINT" "$1" >&2
+  build_script
+  if ! sh_check "spur $spur_name" "$spur_script"; then
+    printf "spur: run '%s -n %s' to see the assembled script\n" "$SPUR_HINT" "$spur_name" >&2
     spur_check_failed=1
   fi
 }
 
 # check_tasks [TASK] -- check the preamble on its own first, so that a broken
 # preamble is reported once instead of once per task; then TASK, or every
-# task in file order. Exits 65 if anything fails to parse.
+# task in file order. The parser runs once, whatever the number of tasks.
+# Exits 65 if anything fails to parse.
 check_tasks() {
+  load_sections "$1"
   build_head
   sh_check "spur (preamble)" "$spur_head" || exit 65
-  if [ -n "$1" ]; then
-    check_task "$1"
-  else
-    run_parser names "" || parser_error $?
-    # Task names match [A-Za-z0-9_.-]+, so splitting them cannot glob.
-    # shellcheck disable=SC2086
-    for spur_name in $SPUR_PARSER_OUT; do
-      check_task "$spur_name"
-    done
-  fi
+  while next_section; do
+    check_task
+  done
   [ -z "$spur_check_failed" ] || exit 65
 }
 
@@ -540,8 +618,10 @@ case " ${SPUR_STACK:-} " in
     ;;
 esac
 
+load_sections "$spur_task"
 build_head
-build_script "$spur_task"
+next_section
+build_script
 
 if [ -n "$spur_dry_opt" ]; then
   printf '%s\n' "$spur_script"

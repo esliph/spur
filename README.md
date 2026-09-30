@@ -54,8 +54,7 @@ happens — a container or a server where you would rather add nothing at all.
 ### What is actually different
 
 - **Nothing to install.** The runner is one file that depends on `sh`, `awk`
-and the basic POSIX utilities `dirname`, `basename` and `cat`, nothing else (a
-test runs it with only those on `PATH`). Fetch it with `curl`, or commit it
+and `cat`, nothing else (a test runs it with only those on `PATH`). Fetch it with `curl`, or commit it
 into the repository and let
 whoever clones run `./spur test` on a machine with no package manager and
 no network.
@@ -158,10 +157,9 @@ chmod +x spur
 git add spur Spurfile && git commit -m "chore: vendor spur"
 ```
 
-The runner is one file with no dependencies beyond `sh`, `awk` and the basic
-POSIX utilities `dirname`, `basename` and `cat`, so
+The runner is one file with no dependencies beyond `sh`, `awk` and `cat`, so
 committing it is not the same kind of decision as committing a binary: it is
-about 550 lines of readable shell, it diffs, and it is the same file on every
+about 580 lines of readable shell, it diffs, and it is the same file on every
 platform. From then on the tasks run with no install step at all:
 
 ```console

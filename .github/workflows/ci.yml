@@ -53,7 +53,7 @@ jobs:
         run: SPUR_TEST_SHELL=dash SPUR_TEST_AWK="${{ matrix.awk }}" sh tests/run.sh
 
   macos:
-    # bash 3.2 as sh, BSD awk, and the BSD dirname and basename.
+    # bash 3.2 as sh, and BSD awk.
     name: tests (macOS)
     runs-on: macos-latest
     steps:
