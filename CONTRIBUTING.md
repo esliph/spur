@@ -101,11 +101,12 @@ same commit or pull request. A release is then two steps:
 `spur release` refuses a version that is not `X.Y.Z` or does not follow the
 current one, a branch other than `develop`, uncommitted changes, a `develop`
 that differs from `origin/develop`, an existing tag and an empty
-*Unreleased*. It runs `spur --check` and the tests, sets the version in
-`spur` and in the README, turns *Unreleased* into `## [0.3.0] - <today>`
-with its compare link, commits `chore(release): 0.3.0`, pushes `develop`
-and opens the pull request into `master` with the release notes as its
-body. `spur release-notes 0.3.0` prints those notes on their own.
+*Unreleased*. It runs `spur --check`, sets the version in `spur` and in
+the README, turns *Unreleased* into `## [0.3.0] - <today>` with its
+compare link, commits `chore(release): 0.3.0`, pushes `develop` and opens
+the pull request into `master` with the release notes as its body, printing
+a line before each step. It does not run lint or the tests: CI runs both on
+the pull request, and nothing is published until they pass on `master`. `spur release-notes 0.3.0` prints those notes on their own.
 
 Merging that pull request is the release. On `master`, once every CI job is
 green, the `release` job runs `spur publish`: it tags the merge commit
