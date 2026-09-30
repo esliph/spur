@@ -74,7 +74,7 @@ preserved; `SPUR_TASK`, `SPUR_ROOT`, `SPUR_INVOCATION_DIR`, `SPUR_BIN` are
 exported correctly; tasks run from the Spurfile's directory, including under
 `-f`; `-`, `.`, `_` and digits are legal in task names; stdin stays free for an interactive
 task; a failing command is labelled `spur <task>`; the runner works with only
-`sh`, `awk`, `dirname`, `basename` and `cat` on `PATH` (`exec-minimal-path`);
+`sh`, `awk` and `cat` on `PATH` (`exec-minimal-path`);
 `sh spur build` resolves `SPUR_BIN` to `./spur`, not to another `spur` on
 `PATH` (`exec-invoked-by-bare-name`).
 
