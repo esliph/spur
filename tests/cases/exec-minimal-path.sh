@@ -1,5 +1,5 @@
-# The runner needs sh, awk, dirname, basename and cat (for --help), and
-# nothing else: every path through it works with only those on PATH.
+# The runner needs sh, awk and cat (for --help), and nothing else: every
+# path through it works with only those on PATH.
 # $runner and $shell_under_test come from tests/run.sh.
 # shellcheck disable=SC2154
 spurfile <<'EOF'
@@ -14,7 +14,7 @@ EOF
 # or a symlink would do on Linux, but not under MSYS (Git Bash), where a
 # copied binary no longer finds the DLLs that sit next to the original.
 mkdir bin
-for tool in sh awk dirname basename cat; do
+for tool in sh awk cat; do
   real=$(command -v "$tool") || fail "no $tool on PATH"
   # shellcheck disable=SC2016  # "$@" is for the wrapper, not expanded here
   printf '#!/bin/sh\nexec '\''%s'\'' "$@"\n' "$real" >"bin/$tool"
