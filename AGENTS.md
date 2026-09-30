@@ -144,9 +144,11 @@ script.
 - Inside `SPUR_PARSER`: strict POSIX awk, and **never a single quote** — the
   program lives inside a single-quoted shell string and a quote would terminate
   it.
-- The runner may depend on `sh`, `awk` and the basic POSIX utilities
-  `dirname`, `basename` and `cat`, nothing else; `exec-minimal-path` holds it
-  to that. No `mktemp`, no `stat`, no temporary files.
+- The runner may depend on `sh`, `awk` and `cat`, nothing else;
+  `exec-minimal-path` holds it to that. No `mktemp`, no `stat`, no temporary
+  files. Paths are split with parameter expansion, not `dirname`/`basename`:
+  every process the runner starts is paid on every run, and again by every
+  `spur` a task calls.
 - Everything in this repository is written in English, including commits and
   comments.
 - Every behavior change comes with a test.

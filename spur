@@ -55,41 +55,60 @@ EOF
 
 # ------------------------------------------------------------------ locating
 
-# Absolute path of this script. Must run before any directory change.
+# Paths are taken apart with parameter expansion rather than dirname and
+# basename, and results are left in globals rather than printed into a
+# command substitution: every process started here is paid on every run, and
+# again by every spur a task calls.
+
+# abs_path FILE -- leaves the absolute path of FILE in the global
+# "spur_abs". The directory goes through cd, so it is resolved as before.
+abs_path() {
+  case $1 in
+    */*) spur_abs=$(cd "${1%/*}/" && pwd) ;;
+    *) spur_abs=$PWD ;;
+  esac
+  spur_abs=$spur_abs/${1##*/}
+}
+
+# resolve_self -- leaves the absolute path of this script in SPUR_BIN. Must
+# run before any directory change.
 resolve_self() {
   case $0 in
     */*)
-      printf '%s/%s\n' "$(cd "$(dirname "$0")" && pwd)" "$(basename "$0")"
+      abs_path "$0"
       ;;
     *)
       # "sh spur" opens ./spur before searching PATH, so a file of that name
       # here is the one running; PATH is only asked when there is none.
       if [ -f "$0" ]; then
-        printf '%s/%s\n' "$PWD" "$0"
-        return 0
+        spur_abs=$PWD/$0
+      else
+        spur_self=$(command -v -- "$0" 2>/dev/null) || spur_self=$0
+        case $spur_self in
+          /*) spur_abs=$spur_self ;;
+          *) abs_path "$spur_self" ;;
+        esac
       fi
-      spur_self=$(command -v -- "$0" 2>/dev/null) || spur_self=$0
-      case $spur_self in
-        /*) printf '%s\n' "$spur_self" ;;
-        *) printf '%s/%s\n' "$(cd "$(dirname "$spur_self")" && pwd)" "$(basename "$spur_self")" ;;
-      esac
       ;;
   esac
+  SPUR_BIN=$spur_abs
 }
 
-# Print the nearest Spurfile, searching upwards from the current directory.
+# find_spurfile -- leaves the nearest Spurfile, searching upwards from the
+# current directory, in SPUR_FILE; returns 1 when there is none.
 find_spurfile() {
   spur_dir=$PWD
   while :; do
     if [ -f "$spur_dir/Spurfile" ]; then
-      printf '%s/Spurfile\n' "$spur_dir"
+      SPUR_FILE=$spur_dir/Spurfile
       return 0
     fi
     if [ -f "$spur_dir/spurfile" ]; then
-      printf '%s/spurfile\n' "$spur_dir"
+      SPUR_FILE=$spur_dir/spurfile
       return 0
     fi
-    spur_parent=$(dirname "$spur_dir")
+    spur_parent=${spur_dir%/*}
+    spur_parent=${spur_parent:-/}
     [ "$spur_parent" = "$spur_dir" ] && return 1
     spur_dir=$spur_parent
   done
@@ -389,7 +408,7 @@ fi
 
 # ---------------------------------------------------------------------- setup
 
-SPUR_BIN=$(resolve_self)
+resolve_self
 SPUR_INVOCATION_DIR=$PWD
 
 if [ -n "$spur_chdir_opt" ]; then
@@ -398,13 +417,16 @@ fi
 
 if [ -n "$spur_file_opt" ]; then
   [ -f "$spur_file_opt" ] || die 66 "$spur_file_opt: no such file"
-  SPUR_FILE=$(cd "$(dirname "$spur_file_opt")" && pwd)/$(basename "$spur_file_opt")
+  abs_path "$spur_file_opt"
+  SPUR_FILE=$spur_abs
 else
-  SPUR_FILE=$(find_spurfile) ||
+  find_spurfile ||
     die 66 "no Spurfile found in $PWD or any parent directory"
 fi
 
-SPUR_ROOT=$(dirname "$SPUR_FILE")
+# SPUR_FILE is absolute, so it has a slash; a Spurfile at / leaves "".
+SPUR_ROOT=${SPUR_FILE%/*}
+SPUR_ROOT=${SPUR_ROOT:-/}
 cd "$SPUR_ROOT" || die 66 "cannot enter $SPUR_ROOT"
 
 # The command the hints tell the user to run. With -f or -C it names the
