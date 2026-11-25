@@ -1,14 +1,21 @@
+# Notes for coding agents
+
+Read [CONTRIBUTING.md](CONTRIBUTING.md) before changing anything: its
+*Rules* bind every change, and it explains the test harness, the shell matrix,
+the docs layout and the release process. This file adds what an agent needs
+on top of it: how the runner is built and what is easy to break.
+
 ## What this is
 
-`spur` is a task runner written in strict POSIX sh. The entire program is the
-single file `spur` at the repository root — there is no build step, no
-compilation, no dependency install. It reads a `Spurfile`, lists tasks, and
-runs one task per invocation in a single shell.
+`spur` is a task runner written in strict POSIX sh. The whole program is the
+single file `spur` at the repository root: no build step, no compilation, no
+dependency install. It reads a `Spurfile`, lists tasks, and runs one task per
+invocation in a single shell.
 
-Scope boundary (enforced by design, not an oversight): **spur runs tasks, it
-does not build software.** No dependency graph, no timestamp rebuilds, no
-pattern rules. Requests that add a task graph or incremental builds contradict
-the design of the tool.
+Scope boundary (by design, not an oversight): **spur runs tasks, it does not
+build software.** No dependency graph, no timestamp rebuilds, no pattern
+rules. A request that adds a task graph or incremental builds contradicts the
+design of the tool.
 
 ## Commands
 
@@ -25,151 +32,73 @@ shellcheck -s sh spur tests/run.sh tests/lib.sh tests/common.sh tests/bench/*.sh
 ```
 
 The repository dogfoods itself, so the same things are available through the
-`Spurfile` (`./spur test`, `./spur bench`, `./spur lint`, `./spur test-all`, `./spur check`).
-Use the raw `sh tests/run.sh` form when debugging the runner itself, so a
-broken runner cannot hide a broken suite.
-
-CI (`.github/workflows/ci.yml`) runs shellcheck (pinned to 0.11.0) plus the
-suite under `sh`, `dash`, `bash`, busybox ash (Alpine in Docker) and macOS
-(bash 3.2, BSD awk), then under dash once per awk (`gawk --posix`, `mawk`,
-`original-awk`), and runs every benchmark scenario once so none rots. Nothing is skipped locally that CI will not
-catch, but `dash` catches almost everything. On a push to `master`, once
-every other job is green, its `release` job runs `./spur publish`, which
-tags and publishes the version in `SPUR_VERSION` unless it is already
-tagged; see *Releasing* in `CONTRIBUTING.md`.
+`Spurfile` (`./spur test`, `./spur bench`, `./spur lint`, `./spur test-all`,
+`./spur check`). Use the raw `sh tests/run.sh` form when debugging the runner
+itself, so a broken runner cannot hide a broken suite. `dash` catches almost
+everything CI will.
 
 ## Architecture
 
 The runner is four sequential stages inside one file, in this order:
 
-1. **Locating** — `resolve_self` computes the runner's absolute path *before*
-   any `cd`; `find_spurfile` walks up from `$PWD` looking for `Spurfile` then
-   `spurfile` (both spellings exist because macOS/Windows filesystems are
-   case-insensitive). The process then `cd`s to the Spurfile's directory, so
+1. **Locating.** `resolve_self` computes the runner's absolute path *before*
+   any `cd`. `find_spurfile` walks up from `$PWD` looking for `Spurfile`,
+   then `spurfile`. The process then `cd`s to the Spurfile's directory, so
    every task runs from there.
-2. **Parsing** — `SPUR_PARSER`, a single awk program held in a single-quoted
+2. **Parsing.** `SPUR_PARSER` is a single awk program held in a single-quoted
    shell string, with four modes selected by `-v mode=`: `list`, `names`,
-   `sections`, `describe`. It emits diagnostics on **stdout** and carries meaning in the exit
-   status (65 malformed, 67 unknown task) because `/dev/stderr` is not portable
-   across awk implementations. `run_parser` must stay a function writing to the
-   global `SPUR_PARSER_OUT` — wrapping it in a command substitution would
-   swallow the exit status the caller needs. A run, and a `--check` of every
-   task, parse the Spurfile once: `sections` emits the preamble and the
-   wanted bodies in one output, split by a marker line it picks so that no
-   other line starts with it (`assembly-separator-collision`), and
-   `load_sections`/`next_section` take it apart with parameter expansion.
-3. **Assembly** — `build_script` concatenates `SPUR_PRELUDE` (`set -e` plus an
-   injected `spur()` function pointing at `$SPUR_BIN`), then the preamble, then
-   optionally `PS4`/`set -x`, then the dedented body.
-4. **Execution** — `exec sh -c "$spur_script" "spur $spur_task" "$@"`. The single `sh -c`
-   is load-bearing: it is why stdin stays free for interactive tasks, why no
-   temporary file is needed, and why shell errors are labelled
-   `spur build: line 3: ...` ($0 is set to `spur <task>`).
+   `sections`, `describe`. It writes diagnostics to **stdout** and carries
+   meaning in the exit status (65 malformed, 67 unknown task), because
+   `/dev/stderr` is not portable across awk implementations. `run_parser`
+   must stay a function writing to the global `SPUR_PARSER_OUT`: a command
+   substitution would swallow the exit status the caller needs. A run, and a
+   `--check` of every task, parse the Spurfile once: `sections` emits the
+   preamble and the wanted bodies in one output, split by a marker line it
+   picks so that no other line starts with it
+   (`assembly-separator-collision`), and `load_sections`/`next_section` take
+   it apart with parameter expansion.
+3. **Assembly.** `build_script` concatenates `SPUR_PRELUDE` (`set -e` plus an
+   injected `spur()` function pointing at `$SPUR_BIN`), then the preamble,
+   then optionally `PS4`/`set -x`, then the dedented body.
+4. **Execution.** `exec sh -c "$spur_script" "spur $spur_task" "$@"`. The
+   single `sh -c` is load-bearing: it keeps stdin free for interactive tasks,
+   needs no temporary file, and labels shell errors `spur build: line 3: ...`
+   (`$0` is `spur <task>`).
 
-Things that follow from that structure and are easy to break:
+## Easy to break
 
-- **The runner expands nothing.** `$VAR`, `$(cmd)`, `$$` must reach the task
-  shell byte-for-byte. Any change that introduces an expansion in the parse or
-  assembly path is a bug (see `tests/cases/assembly-no-expansion-by-runner.sh`).
-- **Dedent** strips the longest common leading-whitespace prefix across the
-  body's non-blank lines (`cprefix`), so nested `if`/`for`/heredocs keep their
-  relative shape. Blank lines inside a body belong to the body; only content at
-  column zero ends it.
-- **Flag/argument split**: the first word not starting with `-` is the task
-  name; everything after it is the task's, untouched. `spur -n test` is a dry
-  run, `spur test -n` passes `-n` as `"$1"`. Short flags are deliberately not
-  groupable.
-- **Recursion guard**: `SPUR_STACK` is the chain exported to children, one
-  frame per line: the task name, a space, and the physical path of its
-  Spurfile. A task already in it *for the same Spurfile* exits 68; the same
-  name in another Spurfile (`spur -C sub install` from `install`) is another
-  task. Repeated (non-recursive) calls are allowed — a task legitimately runs
-  more than once without a graph.
-- **Exit codes** use the sysexits range so they never collide with a task's
-  own, which is propagated unchanged: 64 usage, 65 malformed Spurfile,
-  66 Spurfile not found, 67 unknown task, 68 recursion.
-- **Exported environment**: `SPUR_BIN`, `SPUR_ROOT` (= task working dir),
+- **The runner expands nothing.** `$VAR`, `$(cmd)` and `$$` must reach the
+  task shell byte for byte. An expansion in the parse or assembly path is a
+  bug (`tests/cases/assembly-no-expansion-by-runner.sh`).
+- **Dedent** strips the longest common leading-whitespace prefix of the
+  body's non-blank lines (`cprefix`), so nested `if`/`for`/heredocs keep
+  their shape. Blank lines inside a body belong to it; only content at column
+  zero ends it.
+- **Flag/argument split.** The first word not starting with `-` is the task
+  name; everything after it is the task's, untouched. Short flags are not
+  groupable on purpose.
+- **Recursion guard.** `SPUR_STACK` holds one frame per line: the task name,
+  a space, and the physical path of its Spurfile. A task already in it *for
+  the same Spurfile* exits 68. The same name in another Spurfile is another
+  task, and repeated (non-recursive) calls are allowed.
+- **Exit codes** stay in the sysexits range, which ordinary tools seldom
+  return, apart from a task's own code, which is propagated unchanged: 64 usage, 65 malformed
+  Spurfile, 66 Spurfile not found, 67 unknown task, 68 recursion.
+- **Exported environment:** `SPUR_BIN`, `SPUR_ROOT` (= task working dir),
   `SPUR_INVOCATION_DIR`, `SPUR_TASK`, `SPUR_STACK`.
-- **The runner's variables start with `spur_` or `SPUR_`**, loop variables
-  and function temporaries included. The task inherits the runner's
-  environment, so a plain name like `mode` would overwrite the caller's
-  exported `mode` (see `tests/cases/exec-caller-environment-kept.sh`, which
-  also scans the runner for stray names).
+- **Runner variables start with `spur_` or `SPUR_`**, loop variables and
+  function temporaries included (`exec-caller-environment-kept` scans the
+  runner for stray names).
+- **No new processes.** The runner may start `sh`, `awk` and `cat` only
+  (`exec-minimal-path`).
 
-## Test suite
+## Where things are documented
 
-`tests/run.sh` is a hand-rolled harness — no bats, no shellspec, deliberately:
-a tool that advertises zero dependencies cannot need a framework to test
-itself. It selects the cases (the rule lives in `tests/common.sh`, shared
-with the benchmark harness), runs them in parallel workers (`SPUR_TEST_JOBS`,
-default the number of CPUs), then reports in alphabetical order, so the
-output does not depend on the number of workers. `SPUR_TEST_TIMES=1` adds
-each case's duration and the five slowest. Each case runs in a subshell in
-its own temp dir under `${SPUR_TEST_TMPDIR:-/tmp}`, with stdin closed and
-`tests/lib.sh` sourced for helpers: `spurfile` (heredoc → `./Spurfile`),
-`run ARGS...` (fills the files `stdout` and `stderr`, the variables `$stdout`
-and `$stderr`, and `$status`), `capture CMD...` (the same for any other
-command: the harness, a vendored copy of the runner), `assert_status`,
-`assert_stdout_is` (byte-exact, heredoc),
-`assert_{stdout,stderr}_{has,lacks,matches}`, `fail`, `wait_for FILE
-[SECONDS]` (polls until a file a background process writes exists), and
-`fake_suite` (a copy of the harnesses and the runner in `./fake`, for
-`harness-` cases). The
-`has`/`lacks` assertions read the variables, so a command run without `run`
-or `capture` is invisible to them.
-
-`run.sh` unsets the `SPUR_*` variables before the cases run, its own
-`SPUR_TEST_JOBS`, `SPUR_TEST_TIMES` and `SPUR_TEST_AWK` included (the chosen
-awk stays first on `PATH`), so running the suite through
-`./spur test` does not leak the outer invocation's state into cases.
-
-`tests/bench/run.sh` measures the runner. It selects scenarios in
-`tests/bench/` by the same rule, runs them one at a time, and prints min,
-mean and max per scenario: numbers only, no baseline, no threshold. A
-scenario is a straight-line script, like a case, that prepares its directory
-and calls `measure ARGS...` once: one warm-up run of the runner with ARGS,
-then `SPUR_BENCH_ITERATIONS` (default 10) timed runs; a failing run fails the
-scenario. It needs `date +%s%N` to print nanoseconds and exits 69 when it
-does not.
-
-New cases go in `tests/cases/group-what-it-checks.sh`. The file name without `.sh`
-is the case name: unique in the directory, and what `sh tests/run.sh <name>`
-selects (an exact name wins over the substring filter, and a name that selects
-nothing exits 64). Cases run in parallel and must be independent of one
-another; the report is alphabetical, and `SPUR_TEST_JOBS=1` runs them one at
-a time. The `group-` prefix keeps related cases
-together and lets `sh tests/run.sh <group>-` run the whole group: `cli-`,
-`discovery-` (finding the Spurfile, `-f`, `-C`), `parse-` (parsing and `list`),
-`assembly-` (generated script, dry run), `exec-` (running a task), `chain-`
-(`spur` called from a task), `trace-` (`-x`), `check-` (`--check`) and
-`harness-` (the harness itself). Prefer `assert_stdout_is` against
-`run -n <task>` when asserting on assembly — it pins the exact generated
-script.
-
-## Constraints when editing
-
-- Strict POSIX sh. No bashisms anywhere, including in the test suite.
-  `shellcheck -s sh` must pass clean; existing `# shellcheck disable=` comments
-  carry a justification and new ones should too.
-- Inside `SPUR_PARSER`: strict POSIX awk, and **never a single quote** — the
-  program lives inside a single-quoted shell string and a quote would terminate
-  it.
-- The runner may depend on `sh`, `awk` and `cat`, nothing else;
-  `exec-minimal-path` holds it to that. No `mktemp`, no `stat`, no temporary
-  files. Paths are split with parameter expansion, not `dirname`/`basename`:
-  every process the runner starts is paid on every run, and again by every
-  `spur` a task calls.
+- User-facing contract: `docs/reference.md`. A behavior change updates it in
+  the same commit, and `CHANGELOG.md` under *Unreleased*.
+- Design reasons and the accepted limitations: `docs/explanation.md`. A
+  "missing feature" listed under *What it costs* there is a decision, not a
+  gap.
+- Test harness, helpers, case naming, docs layout, release: `CONTRIBUTING.md`.
 - Everything in this repository is written in English, including commits and
   comments.
-- Every behavior change comes with a test.
-- `.gitattributes` forces LF everywhere; CRLF would break the shebang and every
-  heredoc. On Windows, work through Git Bash/WSL — the tests need a POSIX shell.
-
-## Docs
-
-`README.md` is the user-facing contract (language, CLI, exit codes, the
-make→spur mapping, and the six known limitations). Behavior changes usually
-need it updated in the same commit. `CONTRIBUTING.md` holds the testing rules
-and the release process. `CHANGELOG.md` is where a user-visible change is
-written down, under *Unreleased*, in the same commit; it is the source of
-the release notes.

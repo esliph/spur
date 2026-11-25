@@ -197,7 +197,7 @@ than it looks:
   `trace-flag.sh` is the model: dash and bash quote a traced word differently,
   so the case accepts both spellings rather than pinning one shell's output.
 - **Always** assert the status, even when you also assert output. Every exit
-  code is a documented promise — `README.md` has the table, and which code
+  code is a documented promise — `docs/reference.md` has the table, and which code
   belongs to which failure is decided there, not here — and a case that only
   checks text lets a code regress silently. Look the expected code up; two of
   them are deliberately close together and guessing gets it wrong.
@@ -249,7 +249,7 @@ Every behavior change ships with a test, and the order matters:
    documentation drift apart.
 
 What the suite exists to defend is not decided here. The repository states the
-runner's invariants — `AGENTS.md` for how the stages are built, `README.md`
+runner's invariants — `AGENTS.md` for how the stages are built, `docs/reference.md`
 for the half of it users were promised — and the suite's job is to hold them
 still. Each already has a case standing on it, and these are the ones to run
 first after a refactor that "changes nothing":
@@ -304,7 +304,7 @@ Ideas to turn down:
 - A case that depends on another case, on execution order, or on files outside
   its own directory.
 - Coverage for features spur deliberately does not have. The repository fixes
-  that scope and lists what falls outside it (`AGENTS.md`, and `README.md` for
+  that scope and lists what falls outside it (`AGENTS.md`, and `docs/explanation.md` for
   the known limitations). A "test" for something on that list is a redesign in
   disguise, not a coverage gap — turn it down as a scope question, and leave
   the scope itself to the documents that set it.
