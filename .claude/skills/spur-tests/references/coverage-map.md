@@ -242,7 +242,7 @@ utilities there are BSD, and in the image they are busybox.
 
 Scope is fixed by design, not by omission, and the repository is where it is
 fixed — a case for anything on that list is a redesign wearing a test's
-clothes, so it never appears here as a gap. The README's known limitations work
+clothes, so it never appears here as a gap. The known limitations in `docs/explanation.md` work
 the same way: each is a decision, so a case that pins one as *current
 behavior* is fine and a case that asserts the opposite is a feature request
 with an assertion attached.
